@@ -67,6 +67,7 @@ def prepare_exogenous_data(
     mask = []
     for rid, rtime in tqdm(zip(id_array, time_array)):
         df: pd.DataFrame = exg_dict[rid]
+        df['Date'] = df.index.values
         if rtime in df.index:  # [features]
             right = df.index.get_loc(rtime) + 1
             left = right - num_past
