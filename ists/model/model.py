@@ -6,10 +6,28 @@ from ists.model.encoder import GlobalEncoderLayer, EncoderLayer
 
 
 class TTransformer(tf.keras.Model):
-    def __init__(self, *, kernel_size, d_model, num_heads, dff, dropout_rate=0.1):
+    def __init__(
+            self,
+            *,
+            feature_mask,
+            kernel_size,
+            d_model,
+            num_heads,
+            dff,
+            fff,
+            dropout_rate=0.1,
+            null_max_size=None,
+            time_max_sizes=None,
+    ):
         super().__init__()
 
-        self.embedding = TemporalEmbedding(d_model=d_model, kernel_size=kernel_size)
+        self.temporal_embedder = TemporalEmbedding(
+            d_model=d_model,
+            kernel_size=kernel_size,
+            feature_mask=feature_mask,
+            null_max_size=null_max_size,
+            time_max_sizes=time_max_sizes,
+        )
 
         self.encoder = EncoderLayer(
             d_model=d_model,
@@ -19,25 +37,59 @@ class TTransformer(tf.keras.Model):
         )
 
         self.flatten = tf.keras.layers.Flatten()
-
+        self.dense = tf.keras.layers.Dense(fff, activation='gelu')
         self.final_layer = tf.keras.layers.Dense(1)
 
     def call(self, x, **kwargs):
-        x = self.embedding(x)
+        x = self.temporal_embedder(x)
         x = self.encoder(x)
         x = self.flatten(x)
+        x = self.dense(x)
         pred = self.final_layer(x)  # (batch_size, target_len, target_vocab_size)
 
         return pred
 
 
 class STTransformer(tf.keras.Model):
-    def __init__(self, *, spatial_size, kernel_size, d_model, num_heads, dff, fff, dropout_rate=0.1):
+    def __init__(
+            self,
+            *,
+            feature_mask,
+            exg_feature_mask,
+            spatial_size,
+            kernel_size,
+            d_model,
+            num_heads,
+            dff,
+            fff,
+            dropout_rate=0.1,
+            null_max_size=None,
+            time_max_sizes=None,
+            exg_time_max_sizes=None,
+    ):
         super().__init__()
 
-        self.temporal_embedder = TemporalEmbedding(d_model=d_model, kernel_size=kernel_size)
-        self.exogenous_embedder = TemporalEmbedding(d_model=d_model, kernel_size=kernel_size)
-        self.spatial_embedder = SpatialEmbedding(d_model=d_model, kernel_size=kernel_size, spatial_size=spatial_size)
+        self.temporal_embedder = TemporalEmbedding(
+            d_model=d_model,
+            kernel_size=kernel_size,
+            feature_mask=feature_mask,
+            null_max_size=null_max_size,
+            time_max_sizes=time_max_sizes,
+        )
+        self.exogenous_embedder = TemporalEmbedding(
+            d_model=d_model,
+            kernel_size=kernel_size,
+            feature_mask=exg_feature_mask,
+            time_max_sizes=exg_time_max_sizes,
+        )
+        self.spatial_embedder = SpatialEmbedding(
+            d_model=d_model,
+            kernel_size=kernel_size,
+            spatial_size=spatial_size,
+            feature_mask=feature_mask,
+            null_max_size=null_max_size,
+            time_max_sizes=time_max_sizes,
+        )
 
         self.encoder = GlobalEncoderLayer(
             d_model=d_model,
@@ -47,7 +99,7 @@ class STTransformer(tf.keras.Model):
         )
 
         self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(fff, activation='relu')
+        self.dense = tf.keras.layers.Dense(fff, activation='gelu')
         self.final_layer = tf.keras.layers.Dense(1)
         self.last_attn_scores = None
 
@@ -68,47 +120,46 @@ class STTransformer(tf.keras.Model):
 
         return pred
 
-
-if __name__ == '__main__':
-    # Input
-    data1 = np.random.randn(100, 24, 4).astype(np.float32)
-    data2 = np.random.randn(100, 12, 4).astype(np.float32)
-    data3 = np.random.randn(100, 6, 4).astype(np.float32)
-    data = [data1, data2, data3, data3]
-    y = np.random.randn(100, 1)
-
-    # # Temporal Transformer init and call
-    # temporal_transformer = TTransformer(kernel_size=3, d_model=128, num_heads=2, dff=256, dropout_rate=0.1)
-    # pred1 = temporal_transformer(data1)
-    # print(f'TTransformer:  {data1.shape} {pred1.shape}')
-
-    # Spatio-Temporal Transformer init and call
-    transformer = STTransformer(
-        spatial_size=len(data) - 2,
-        kernel_size=3,
-        d_model=128,
-        num_heads=2,
-        dff=256,
-        fff=48,
-        dropout_rate=0.1
-    )
-
-    optimizer = tf.keras.optimizers.Adam(learning_rate=0.01) #, clipnorm=1.0, clipvalue=0.5)
-    transformer.compile(
-        loss='mse',
-        optimizer=optimizer,
-        metrics=['mae', 'mse']
-    )
-
-    transformer.fit(
-        x=data,
-        y=y,
-        epochs=3,
-        batch_size=32,
-        validation_split=0.2,
-        verbose=2
-    )
-
-    y_preds = transformer.predict(data)
-    print(y_preds.shape)
-    print('Hello World!')
+# if __name__ == '__main__':
+#     # Input
+#     data1 = np.random.randn(100000, 24, 4).astype(np.float32)
+#     data2 = np.random.randn(100000, 12, 4).astype(np.float32)
+#     data3 = np.random.randn(100000, 6, 4).astype(np.float32)
+#     data = [data1, data2, data3, data3]
+#     y = np.random.randn(100000, 1)
+#
+#     # Spatio-Temporal Transformer init and call
+#     transformer = STTransformer(
+#         feature_mask=[0, 0, 0, 0],
+#         exg_feature_mask=[0, 0, 0, 0],
+#         spatial_size=len(data) - 2,
+#         kernel_size=3,
+#         d_model=128,
+#         num_heads=2,
+#         dff=256,
+#         fff=48,
+#         dropout_rate=0.1,
+#         null_max_size=None,
+#         time_max_sizes=None,
+#         exg_time_max_sizes=None,
+#     )
+#
+#     optimizer = tf.keras.optimizers.Adam(learning_rate=0.01)  # , clipnorm=1.0, clipvalue=0.5)
+#     transformer.compile(
+#         loss='mse',
+#         optimizer=optimizer,
+#         metrics=['mae', 'mse']
+#     )
+#
+#     transformer.fit(
+#         x=data,
+#         y=y,
+#         epochs=3,
+#         batch_size=32,
+#         validation_split=0.2,
+#         verbose=2
+#     )
+#
+#     y_preds = transformer.predict(data)
+#     print(y_preds.shape)
+#     print('Hello World!')

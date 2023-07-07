@@ -55,31 +55,6 @@ def read_context(filename: str, id_col: str, x_col: str, y_col: str) -> Dict[str
     return res
 
 
-def read_exogenous_series_old(filename) -> Dict[Tuple[float, float], pd.DataFrame]:
-    """ Read exogenous data inside pickle file """
-    with open(filename, "rb") as f:
-        data = pickle.load(f)
-
-    # Read exogenous series dimension and data values
-    y_list = data['latitude']
-    x_list = data['longitude']
-    times = data['time']
-    matrix = np.array(data['t2m'])
-
-    # For each x and y crate time-series DataFrame
-    ex_dict = {}
-    for i, y in enumerate(y_list):  # Iterate over latitude (y)
-        for j, x in enumerate(x_list):  # Iterate over longitude (x)
-            # Read values with coords x, y
-            vals = matrix[:, i, j]
-
-            # Create time-series DataFrame
-            vals = pd.DataFrame({'t2m': vals}, index=times)
-            vals = vals.sort_index(ascending=True)
-            ex_dict[(x, y)] = vals
-    return ex_dict
-
-
 def read_exogenous_series(filename) -> Dict[Tuple[float, float], pd.DataFrame]:
     """ Read exogenous data inside pickle file """
     with open(filename, "rb") as f:

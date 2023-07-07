@@ -1,4 +1,4 @@
-from typing import Dict, Tuple, Literal, Callable
+from typing import Dict, Tuple, Callable
 import os
 import pickle
 
@@ -21,7 +21,7 @@ def t2m_stats(df: pd.DataFrame) -> pd.Series:
 
 def compress_ts(df: pd.DataFrame, method: Callable[[pd.DataFrame], pd.Series], freq: str = 'D') -> pd.DataFrame:
     # Create date columns without time
-    df['__DATE__'] = df.index.date
+    df['__DATE__'] = pd.to_datetime(df.index).date
     if freq == 'D':
         df['__YEAR__'] = df.index.map(lambda x: x.year)
         df['__GROUP__'] = df.index.map(lambda x: x.date)
@@ -131,7 +131,7 @@ def merge_exogenous_dict(
 
 
 def create_exogenous_series():
-    base_dir = '../../Dataset/AdbPo/Piezo/'
+    base_dir = '../../../../../Dataset/AdbPo/Piezo/'
     t2m_filename = os.path.join(base_dir, 'NetCDF', 't2m.pickle')  # temperature exogenous series
     tp1_filename = os.path.join(base_dir, 'NetCDF', 'tp_1.pickle')  # total precipitation variable
     tp2_filename = os.path.join(base_dir, 'NetCDF', 'tp_2.pickle')  # total precipitation variable
@@ -156,24 +156,33 @@ def create_exogenous_series():
         pickle.dump(exg_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
     return
 
+def compress_exogenous_series():
+    def my_stats(df: pd.DataFrame) -> pd.Series:
+        res = pd.Series({
+            'tp': df['tp'].sum(),
+            't2m_min': df['t2m_min'].min(),
+            't2m_max': df['t2m_max'].max(),
+            't2m_avg': df['t2m_avg'].mean()
+        })
+        res['__DATE__'] = df['__DATE__'].iloc[-1]
+        return res
 
-def main():
-    base_dir = '../../Dataset/AdbPo/Piezo/'
-    out_filename = os.path.join(base_dir, 'NetCDF', 'exg_t2m.pickle')
+    base_dir = '../../../../../Dataset/AdbPo/Piezo/'
+    filename = os.path.join(base_dir, 'NetCDF', 'exg_tp_t2m.pickle')
+    out_filename = os.path.join(base_dir, 'NetCDF', 'exg_w_tp_t2m.pickle')
+    with open(filename, 'rb') as f:
+        exg_dict = pickle.load(f)
 
-    with open(out_filename, "rb") as f:
-        d = pickle.load(f)
+    for k, ts in tqdm(exg_dict.items()):
+        # Sampling based on freq
+        ts = compress_ts(ts, method=my_stats, freq='W')
+        exg_dict[k] = ts
 
-    print('Hello World!')
+    with open(out_filename, 'wb') as f:
+        pickle.dump(exg_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
 
-    # for k, df in d.items():
-    #     df = df.drop('__DATE__', axis=1)
-    #     d[k] = df
-    #
-    # with open(out_filename, 'wb') as f:
-    #     pickle.dump(d, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 if __name__ == '__main__':
     # create_exogenous_series()
-    main()
+    # compress_exogenous_series()
     print('Hello World!')
