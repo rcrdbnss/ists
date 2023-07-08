@@ -71,13 +71,13 @@ def my_model_search(path_params, prep_params, eval_params, model_params):
 def main():
     output_dir = './output/stt_model'
     # Read input base params
-    # path_params, prep_params, eval_params, model_params = get_params()
-    path_params, prep_params, eval_params, model_params = parse_params()
+    path_params, prep_params, eval_params, model_params = get_params()
+    # path_params, prep_params, eval_params, model_params = parse_params()
     # Extract all possibilities
     configs, params = my_model_search(path_params, prep_params, eval_params, model_params)
 
     results = []
-    for i in range(len(configs[:2])):
+    for i in range(len(configs)):
         # Extract pipeline configuration params
         path_params, prep_params, eval_params, model_params = configs[i]
         # Data step

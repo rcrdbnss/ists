@@ -1,8 +1,8 @@
 {
     "path_params": {
-        "ts_filename": "~/data/Piezo/ts_er.xlsx",
-        "ctx_filename": "~/data/Piezo/data_ext_er.xlsx",
-        "ex_filename": "~/data/Piezo/NetCDF/exg_w_tp_t2m.pickle"
+        "ts_filename": "../../data/Piezo/ts_er.xlsx",
+        "ctx_filename": "../../data/Piezo/data_ext_er.xlsx",
+        "ex_filename": "../../data/Piezo/NetCDF/exg_w_tp_t2m.pickle"
     },
 
     "prep_params": {
