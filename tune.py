@@ -35,7 +35,7 @@ def my_model_search(path_params, prep_params, eval_params, model_params):
             },
         ],
         "transform_type": ["standard"],  # , "minmax"],
-        "epochs": [1],  # [10, 50, 100],
+        "epochs": [10, 50, 100],
         "loss": ['mae', 'mse'],
         "exg_num_past": [12, 36, 60],
         "spt_num_past": [6, 12, 24],

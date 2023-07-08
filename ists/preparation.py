@@ -122,7 +122,7 @@ def sliding_window(
     # New number of rows after the sliding window
     new_rows = 1 + (rows - window) // stride
     # Empty matrix to save sliding window segments
-    matrix = np.zeros((new_rows, window, cols), dtype=np.object)
+    matrix = np.zeros((new_rows, window, cols), dtype=object)
 
     # Sliding window process
     data = ts.values
