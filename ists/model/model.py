@@ -120,46 +120,24 @@ class STTransformer(tf.keras.Model):
 
         return pred
 
-# if __name__ == '__main__':
-#     # Input
-#     data1 = np.random.randn(100000, 24, 4).astype(np.float32)
-#     data2 = np.random.randn(100000, 12, 4).astype(np.float32)
-#     data3 = np.random.randn(100000, 6, 4).astype(np.float32)
-#     data = [data1, data2, data3, data3]
-#     y = np.random.randn(100000, 1)
-#
-#     # Spatio-Temporal Transformer init and call
-#     transformer = STTransformer(
-#         feature_mask=[0, 0, 0, 0],
-#         exg_feature_mask=[0, 0, 0, 0],
-#         spatial_size=len(data) - 2,
-#         kernel_size=3,
-#         d_model=128,
-#         num_heads=2,
-#         dff=256,
-#         fff=48,
-#         dropout_rate=0.1,
-#         null_max_size=None,
-#         time_max_sizes=None,
-#         exg_time_max_sizes=None,
-#     )
-#
-#     optimizer = tf.keras.optimizers.Adam(learning_rate=0.01)  # , clipnorm=1.0, clipvalue=0.5)
-#     transformer.compile(
-#         loss='mse',
-#         optimizer=optimizer,
-#         metrics=['mae', 'mse']
-#     )
-#
-#     transformer.fit(
-#         x=data,
-#         y=y,
-#         epochs=3,
-#         batch_size=32,
-#         validation_split=0.2,
-#         verbose=2
-#     )
-#
-#     y_preds = transformer.predict(data)
-#     print(y_preds.shape)
-#     print('Hello World!')
+
+class BaselineModel(tf.keras.Model):
+
+    def __init__(self, base_model, hidden_units, activation='gelu'):
+        super().__init__()
+        if base_model == 'lstm':
+            self.base = tf.keras.layers.LSTM(hidden_units)
+        elif base_model == 'bilstm':
+            self.base = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(hidden_units))
+        elif base_model == 'dense':
+            self.base = tf.keras.layers.Dense(hidden_units, activation=activation)
+        else:
+            raise ValueError(f'Unsupported model {base_model}')
+
+        self.dense = tf.keras.layers.Dense(hidden_units, activation=activation)
+        self.final_layer = tf.keras.layers.Dense(1)
+
+    def call(self, inputs, **kwargs):
+        x = self.lstm(inputs)
+        x = self.dense(x)
+        return x

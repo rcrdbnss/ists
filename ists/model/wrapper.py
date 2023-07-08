@@ -27,6 +27,34 @@ def get_model(model_type: str, model_params) -> T:
         raise ValueError('Model {} is not supported, it must be "sttransformer"')
 
 
+def custom_mae_loss(y_true, y_pred):
+    factor_levels = tf.unique(y_true[:, 1]).y
+    loss = tf.constant(0.0)
+
+    for level in factor_levels:
+        mask = tf.equal(y_true[:, 1], level)
+        true_subset = tf.boolean_mask(y_true[:, 0], mask)
+        pred_subset = tf.boolean_mask(y_pred[:, 0], mask)
+        mae = tf.reduce_mean(tf.abs(true_subset - pred_subset))
+        loss += (1.0 / tf.cast(level, dtype=tf.float32)) * mae
+
+    return loss
+
+
+def custom_mse_loss(y_true, y_pred):
+    factor_levels = tf.unique(y_true[:, 1]).y
+    loss = tf.constant(0.0)
+
+    for level in factor_levels:
+        mask = tf.equal(y_true[:, 1], level)
+        true_subset = tf.boolean_mask(y_true[:, 0], mask)
+        pred_subset = tf.boolean_mask(y_pred[:, 0], mask)
+        mse = tf.reduce_mean(tf.square(true_subset - pred_subset))
+        loss += (1.0 / tf.cast(level, dtype=tf.float32)) * mse
+
+    return loss
+
+
 class ModelWrapper(object):
     def __init__(self,
                  model_type: str,
@@ -105,10 +133,20 @@ class ModelWrapper(object):
             verbose=verbose
         )
 
+        # # Plotting the validation and training loss
+        # history = model.history
+        # plt.plot(history.history['loss'], label='Training Loss')
+        # plt.plot(history.history['val_loss'], label='Validation Loss')
+        # plt.title('Training and Validation Loss')
+        # plt.xlabel('Epoch')
+        # plt.ylabel('Loss')
+        # plt.legend()
+        # plt.show()
+
     def predict(self, x: np.ndarray, spt: np.ndarray, exg: np.ndarray):
         x, spt, exg = self._fit_transform(x, spt, exg)
 
-        y_preds = self.model.predict([x] + [spt] + [exg])
+        y_preds = self.model.predict([x] + [exg] + spt)
 
         y_preds = self._label_inverse_transform(y_preds)
 

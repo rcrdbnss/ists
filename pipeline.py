@@ -1,8 +1,6 @@
 import os
-import pickle
-
-import matplotlib.pyplot as plt
-import numpy as np
+import json
+import argparse
 
 from ists.dataset.piezo.read import load_data
 from ists.preparation import prepare_data, prepare_train_test
@@ -11,6 +9,22 @@ from ists.preprocessing import get_time_max_sizes
 from ists.spatial import prepare_exogenous_data, prepare_spatial_data
 from ists.model.wrapper import ModelWrapper
 from ists.metrics import compute_metrics
+
+
+def parse_params():
+    """ Parse input parameters. """
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-f', '--file', type=str, required=True,
+                        help='the path where the configuration is stored.')
+    args = parser.parse_args()
+    conf_file = args.file
+    assert os.path.exists(conf_file), 'Configuration file does not exist'
+
+    with open(conf_file, 'r') as f:
+        conf = json.load(f)
+
+    return conf['path_params'], conf['prep_params'], conf['eval_params'], conf['model_params']
 
 
 def get_params():
@@ -31,7 +45,7 @@ def get_params():
             'features': ['Piezometria (m)'],
             'label_col': 'Piezometria (m)',
             'num_past': 24,
-            'num_fut': 12,
+            'num_fut': 6,
             'freq': 'M',  # ['M', 'W', 'D']
         },
         'feat_params': {
@@ -69,13 +83,13 @@ def get_params():
             'd_model': 64,
             'num_heads': 4,
             'dff': 256,
-            'fff': 188,
+            'fff': 64,
             'dropout_rate': 0.1
         },
         'lr': 0.001,
         'loss': 'mse',
         'batch_size': 32,
-        'epochs': 100
+        'epochs': 1
     }
 
     return path_params, prep_params, eval_params, model_params
@@ -193,7 +207,7 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict) -> dict:
     return res
 
 
-def model_step(train_test_dict: dict, model_params: dict) -> None:
+def model_step(train_test_dict: dict, model_params: dict) -> dict:
     model_type = model_params['model_type']
     transform_type = model_params['transform_type']
     nn_params = model_params['nn_params']
@@ -227,16 +241,6 @@ def model_step(train_test_dict: dict, model_params: dict) -> None:
         validation_split=0.1,
         verbose=1,
     )
-    history = model.history
-
-    # Plotting the validation and training loss
-    plt.plot(history.history['loss'], label='Training Loss')
-    plt.plot(history.history['val_loss'], label='Validation Loss')
-    plt.title('Training and Validation Loss')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.show()
 
     preds = model.predict(
         x=train_test_dict['x_test'],
@@ -244,21 +248,38 @@ def model_step(train_test_dict: dict, model_params: dict) -> None:
         exg=train_test_dict['exg_test'],
     )
 
-    res = compute_metrics(y_true=train_test_dict['y_test'], y_preds=preds)
-    print(res)
+    res = {}
+    res_test = compute_metrics(y_true=train_test_dict['y_test'], y_preds=preds)
+    res_test = {f'test_{k}': val for k, val in res_test.items()}
+    res.update(res_test)
+
+    preds = model.predict(
+        x=train_test_dict['x_train'],
+        spt=train_test_dict['spt_train'],
+        exg=train_test_dict['exg_train'],
+    )
+    res_train = compute_metrics(y_true=train_test_dict['y_train'], y_preds=preds)
+    res_train = {f'train_{k}': val for k, val in res_train.items()}
+    res.update(res_train)
+
+    res['loss'] = model.history.history['loss']
+    res['val_loss'] = model.history.history['val_loss']
+    print(res_test)
+    return res
 
 
 def main():
-    path_params, prep_params, eval_params, model_params = get_params()
+    # path_params, prep_params, eval_params, model_params = get_params()
+    path_params, prep_params, eval_params, model_params = parse_params()
 
     train_test_dict = data_step(path_params, prep_params, eval_params)
 
-    # with open('test.pickle', "wb") as f:
-    #     pickle.dump(train_test_dict, f)
+    # # with open('test.pickle', "wb") as f:
+    # #     pickle.dump(train_test_dict, f)
     # with open('test.pickle', "rb") as f:
     #     train_test_dict = pickle.load(f)
 
-    model_step(train_test_dict, model_params)
+    _ = model_step(train_test_dict, model_params)
 
     print('Hello World!')
 

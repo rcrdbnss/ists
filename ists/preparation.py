@@ -166,7 +166,7 @@ def get_null_max_size(x: np.ndarray, feature_mask: List[int]) -> Optional[int]:
         # No null feature inside input data
         return None
     cond = np.array(feature_mask) == 1
-    max_null = np.max(x[:, :, cond])
+    max_null = int(np.max(x[:, :, cond]))
     return max_null + 1
 
 
@@ -277,6 +277,7 @@ def prepare_train_test(
     exg_array = exg_array[mask]
 
     is_train = time_array[:, -1] < pd.to_datetime(test_start).date()
+    is_test = (dist_y_array == 0) & (~is_train)
     res = {
         'x_train': x_array[is_train],
         'y_train': y_array[is_train],
@@ -286,13 +287,13 @@ def prepare_train_test(
         'id_train': id_array[is_train],
         'spt_train': [arr[is_train] for arr in spt_array],
         'exg_train': exg_array[is_train],
-        'x_test': x_array[~is_train],
-        'y_test': y_array[~is_train],
-        'time_test': time_array[~is_train],
-        'dist_x_test': dist_x_array[~is_train],
-        'dist_y_test': dist_y_array[~is_train],
-        'id_test': id_array[~is_train],
-        'spt_test': [arr[~is_train] for arr in spt_array],
-        'exg_test': exg_array[~is_train],
+        'x_test': x_array[is_test],
+        'y_test': y_array[is_test],
+        'time_test': time_array[is_test],
+        'dist_x_test': dist_x_array[is_test],
+        'dist_y_test': dist_y_array[is_test],
+        'id_test': id_array[is_test],
+        'spt_test': [arr[is_test] for arr in spt_array],
+        'exg_test': exg_array[is_test],
     }
     return res
