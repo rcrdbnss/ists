@@ -35,12 +35,12 @@ def my_model_search(path_params, prep_params, eval_params, model_params):
             },
         ],
         "transform_type": ["standard"],  # , "minmax"],
-        "epochs": [10, 50, 100],
-        "loss": ['mae', 'mse'],
-        "exg_num_past": [12, 36, 60],
-        "spt_num_past": [6, 12, 24],
+        "epochs": [10, 50],  # , 100],
+        "loss": ['mse'],  # , "mae"],
+        "exg_num_past": [36, 60],
+        "spt_num_past": [12, 24],
         "spt_num_spt": [2, 5, 7],
-        "x_num_past": [12, 24, 36],
+        "x_num_past": [24, 36],
     }
 
     configs = []
@@ -71,13 +71,15 @@ def my_model_search(path_params, prep_params, eval_params, model_params):
 def main():
     output_dir = './output/stt_model'
     # Read input base params
-    path_params, prep_params, eval_params, model_params = get_params()
-    # path_params, prep_params, eval_params, model_params = parse_params()
+    # path_params, prep_params, eval_params, model_params = get_params()
+    path_params, prep_params, eval_params, model_params = parse_params()
     # Extract all possibilities
     configs, params = my_model_search(path_params, prep_params, eval_params, model_params)
 
     results = []
     for i in range(len(configs)):
+        print('\n\n' + '-' * 50)
+        print(i)
         # Extract pipeline configuration params
         path_params, prep_params, eval_params, model_params = configs[i]
         # Data step
