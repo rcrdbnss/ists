@@ -19,7 +19,7 @@
             "time_feats": ["M"]
         },
         "spt_params": {
-            "num_past": 12,
+            "num_past": 24,
             "num_spt": 5,
             "null_th": 13
         },

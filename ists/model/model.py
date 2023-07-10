@@ -1,4 +1,5 @@
-import numpy as np
+from typing import List
+
 import tensorflow as tf
 
 from ists.model.embedding import TemporalEmbedding, SpatialEmbedding
@@ -123,21 +124,55 @@ class STTransformer(tf.keras.Model):
 
 class BaselineModel(tf.keras.Model):
 
-    def __init__(self, base_model, hidden_units, activation='gelu'):
+    def __init__(
+            self,
+            feature_mask: List[int],
+            base_model: str,
+            hidden_units: int,
+            skip_na: bool = False,
+            activation: str = 'gelu'
+    ):
         super().__init__()
-        if base_model == 'lstm':
+        if base_model.startswith('lstm'):
             self.base = tf.keras.layers.LSTM(hidden_units)
-        elif base_model == 'bilstm':
+        elif base_model.startswith('bilstm'):
             self.base = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(hidden_units))
         elif base_model == 'dense':
             self.base = tf.keras.layers.Dense(hidden_units, activation=activation)
         else:
             raise ValueError(f'Unsupported model {base_model}')
 
+        if skip_na and base_model == 'dense':
+            raise ValueError('Impossible skip nan values with FeedForward Neural Network (dense)')
+
+        if skip_na and 1 not in feature_mask:
+            raise ValueError('Impossible skip nan values without nan encoding')
+
         self.dense = tf.keras.layers.Dense(hidden_units, activation=activation)
         self.final_layer = tf.keras.layers.Dense(1)
 
+        self.feature_mask = feature_mask
+        self.skip_na = skip_na
+        self.feat_ids = [i for i, x in enumerate(feature_mask) if x == 0]
+        self.null_id = [i for i, x in enumerate(feature_mask) if x == 1]
+
     def call(self, inputs, **kwargs):
-        x = self.lstm(inputs)
+        x = inputs[0]
+
+        if x.shape[2] != len(self.feature_mask):
+            raise ValueError('Input data have a different features dimension that the provided feature mask')
+
+        # Extract value, null, and time array from the input matrix
+        x_feat = tf.gather(x, self.feat_ids, axis=2)
+
+        # Add the null encoding
+        if self.skip_na:
+            x_null = x[:, :, self.null_id[0]]
+            mask = tf.equal(x_null, 0)
+            x = self.base(x_feat, mask=mask)
+        else:
+            x = self.base(x_feat)
+
         x = self.dense(x)
+        x = self.final_layer(x)
         return x

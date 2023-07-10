@@ -91,6 +91,7 @@ def main():
         res.update(param)
 
         results.append(res)
+        print(param)
 
     results = pd.DataFrame(results)
 

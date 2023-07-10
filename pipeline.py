@@ -1,5 +1,6 @@
 import os
 import json
+import pickle
 import argparse
 
 from ists.dataset.piezo.read import load_data
@@ -56,7 +57,7 @@ def get_params():
             'time_feats': ['M']  # ['D', 'DW', 'WY', 'M']
         },
         'spt_params': {
-            'num_past': 12,
+            'num_past': 24,
             'num_spt': 5,
             'null_th': 13,
         },
@@ -77,14 +78,14 @@ def get_params():
 
     model_params = {
         'transform_type': 'standard',  # None 'minmax' 'standard'
-        'model_type': 'sttransformer',
+        'model_type': 'sttransformer',  # 'sttransformer', 'dense', 'lstm', 'bilstm', 'lstm_base', 'bilstm_base'
         'nn_params': {
             'kernel_size': 3,
             'd_model': 64,
             'num_heads': 4,
-            'dff': 256,
+            'dff': 128,
             'fff': 64,
-            'dropout_rate': 0.1
+            'dropout_rate': 0.2
         },
         'lr': 0.001,
         'loss': 'mse',
@@ -240,6 +241,12 @@ def model_step(train_test_dict: dict, model_params: dict) -> dict:
         batch_size=batch_size,
         validation_split=0.1,
         verbose=1,
+        extra={
+            'x': train_test_dict['x_test'],
+            'spt': train_test_dict['spt_test'],
+            'exg': train_test_dict['exg_test'],
+            'y': train_test_dict['y_test']
+        }
     )
 
     preds = model.predict(
@@ -274,9 +281,9 @@ def main():
 
     train_test_dict = data_step(path_params, prep_params, eval_params)
 
-    # # with open('test.pickle', "wb") as f:
-    # #     pickle.dump(train_test_dict, f)
-    # with open('test.pickle', "rb") as f:
+    # with open('output/test.pickle', "wb") as f:
+    #     pickle.dump(train_test_dict, f)
+    # with open('output/test.pickle', "rb") as f:
     #     train_test_dict = pickle.load(f)
 
     _ = model_step(train_test_dict, model_params)

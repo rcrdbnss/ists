@@ -1,10 +1,11 @@
-from typing import TypeVar
+from typing import TypeVar, List
 
 import numpy as np
 import tensorflow as tf
 
-from .model import STTransformer
+from .model import STTransformer, BaselineModel
 from ..preprocessing import StandardScalerBatch, MinMaxScalerBatch
+from ..metrics import compute_metrics
 
 T = TypeVar('T', bound=tf.keras.Model)
 
@@ -23,6 +24,21 @@ def get_model(model_type: str, model_params) -> T:
     # Return the selected model
     if model_type == 'sttransformer':
         return STTransformer(**model_params)
+    elif model_type == 'dense':
+        return BaselineModel(feature_mask=model_params['feature_mask'], base_model='dense',
+                             hidden_units=model_params['d_model'], skip_na=False, activation='gelu')
+    elif model_type == 'lstm':
+        return BaselineModel(feature_mask=model_params['feature_mask'], base_model='lstm',
+                             hidden_units=model_params['d_model'], skip_na=True, activation='gelu')
+    elif model_type == 'bilstm':
+        return BaselineModel(feature_mask=model_params['feature_mask'], base_model='bilstm',
+                             hidden_units=model_params['d_model'], skip_na=True, activation='gelu')
+    elif model_type == 'lstm_base':
+        return BaselineModel(feature_mask=model_params['feature_mask'], base_model='lstm',
+                             hidden_units=model_params['d_model'], skip_na=False, activation='gelu')
+    elif model_type == 'bilstm_base':
+        return BaselineModel(feature_mask=model_params['feature_mask'], base_model='bilstm',
+                             hidden_units=model_params['d_model'], skip_na=False, activation='gelu')
     else:
         raise ValueError('Model {} is not supported, it must be "sttransformer"')
 
@@ -55,14 +71,35 @@ def custom_mse_loss(y_true, y_pred):
     return loss
 
 
+class FunctionCallback(tf.keras.callbacks.Callback):
+    def __init__(self, x: np.ndarray, spt: np.ndarray, exg: np.ndarray, y: np.ndarray):
+        super(FunctionCallback, self).__init__()
+        self.x = x
+        self.spt = spt
+        self.exg = exg
+        self.y = y
+
+    def on_epoch_end(self, epoch, logs=None):
+        # Get predictions for the subset of data
+        y_pred_subset = self.model.predict([self.x] + [self.exg] + self.spt)
+
+        # Compute the MAE on the subset
+        metrics = compute_metrics(self.y, y_pred_subset)
+        metrics = " ".join([f'{k}:{val:.4f}' for k, val in metrics.items()])
+
+        # Print or use the MAE as needed
+        print("Metrics epoch {}: {}".format(epoch, metrics))
+
+
 class ModelWrapper(object):
-    def __init__(self,
-                 model_type: str,
-                 model_params: dict,
-                 transform_type=None,
-                 loss: str = 'mse',
-                 lr: float = 0.001,
-                 ):
+    def __init__(
+            self,
+            model_type: str,
+            model_params: dict,
+            transform_type=None,
+            loss: str = 'mse',
+            lr: float = 0.001,
+    ):
         self.model = get_model(model_type, model_params)
         self.transform_type = transform_type
         if transform_type:
@@ -77,7 +114,10 @@ class ModelWrapper(object):
         self.feature_mask = model_params['feature_mask']
         self.exg_feature_mask = model_params['exg_feature_mask']
 
-    def _fit_transform(self, x: np.ndarray, spt: np.ndarray, exg: np.ndarray):
+    def _fit_transform(self, x: np.ndarray, spt: List[np.ndarray], exg: np.ndarray):
+        x = np.copy(x)
+        spt = [np.copy(arr) for arr in spt]
+        exg = np.copy(exg)
         if self.transform_type:
             cond_x = np.array(self.feature_mask) == 0
             x[:, :, cond_x] = self.transformer.fit_transform(x[:, :, cond_x])
@@ -92,12 +132,14 @@ class ModelWrapper(object):
         return x, spt, exg
 
     def _label_transform(self, y):
+        y = np.copy(y)
         if self.transform_type:
             y = self.transformer.transform(y)
 
         return y
 
     def _label_inverse_transform(self, y):
+        y = np.copy(y)
         if self.transform_type:
             y = self.transformer.inverse_transform(y)
         return y
@@ -105,16 +147,23 @@ class ModelWrapper(object):
     def fit(
             self,
             x: np.ndarray,
-            spt: np.ndarray,
+            spt: List[np.ndarray],
             exg: np.ndarray,
             y: np.ndarray,
             epochs: int = 50,
             batch_size: int = 32,
             validation_split: float = 0.1,
-            verbose: int = 0
+            verbose: int = 0,
+            extra=None,
     ):
         x, spt, exg = self._fit_transform(x, spt, exg)
         y = self._label_transform(y)
+
+        x_test, spt_test, exg_test, y_test = extra['x'], extra['spt'], extra['exg'], extra['y']
+        x_test, spt_test, exg_test = self._fit_transform(x_test, spt_test, exg_test)
+        y_test = self._label_transform(y_test)
+
+        callback = FunctionCallback(x_test, spt_test, exg_test, y_test)
 
         optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr)  # , clipnorm=1.0, clipvalue=0.5)
         self.model.compile(
@@ -130,20 +179,11 @@ class ModelWrapper(object):
             epochs=epochs,
             batch_size=batch_size,
             validation_split=validation_split,
-            verbose=verbose
+            verbose=verbose,
+            callbacks=[callback]
         )
 
-        # # Plotting the validation and training loss
-        # history = model.history
-        # plt.plot(history.history['loss'], label='Training Loss')
-        # plt.plot(history.history['val_loss'], label='Validation Loss')
-        # plt.title('Training and Validation Loss')
-        # plt.xlabel('Epoch')
-        # plt.ylabel('Loss')
-        # plt.legend()
-        # plt.show()
-
-    def predict(self, x: np.ndarray, spt: np.ndarray, exg: np.ndarray):
+    def predict(self, x: np.ndarray, spt: List[np.ndarray], exg: np.ndarray):
         x, spt, exg = self._fit_transform(x, spt, exg)
 
         y_preds = self.model.predict([x] + [exg] + spt)
@@ -151,3 +191,13 @@ class ModelWrapper(object):
         y_preds = self._label_inverse_transform(y_preds)
 
         return y_preds
+
+# # Plotting the validation and training loss
+# history = model.history
+# plt.plot(history.history['loss'], label='Training Loss')
+# plt.plot(history.history['val_loss'], label='Validation Loss')
+# plt.title('Training and Validation Loss')
+# plt.xlabel('Epoch')
+# plt.ylabel('Loss')
+# plt.legend()
+# plt.show()

@@ -1,7 +1,6 @@
 import numpy as np
 # import pandas as pd
 import tensorflow as tf
-from datetime import datetime
 
 
 def positional_encoding(length, depth):
@@ -163,7 +162,6 @@ class TemporalEmbedding(tf.keras.layers.Layer):
         if self.null_pos_encoding:
             null_emb = self.null_pos_encoding(x[:, :, self.null_id[0]])
             x_feat = x_feat + null_emb
-
         return x_feat
 
 
