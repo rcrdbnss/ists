@@ -45,7 +45,7 @@ def get_params():
         'ts_params': {
             'features': ['Piezometria (m)'],
             'label_col': 'Piezometria (m)',
-            'num_past': 24,
+            'num_past': 48,
             'num_fut': 6,
             'freq': 'M',  # ['M', 'W', 'D']
         },
@@ -59,10 +59,11 @@ def get_params():
         'spt_params': {
             'num_past': 24,
             'num_spt': 5,
-            'null_th': 13,
+            'max_dist_th': 10000,
+            'max_null_th': 13,
         },
         'exg_params': {
-            'num_past': 36,
+            'num_past': 72,
             'features': ['tp', 't2m_min', 't2m_max', 't2m_avg'],
             'time_feats': ['WY', 'M']
         },
@@ -81,16 +82,18 @@ def get_params():
         'model_type': 'sttransformer',  # 'sttransformer', 'dense', 'lstm', 'bilstm', 'lstm_base', 'bilstm_base'
         'nn_params': {
             'kernel_size': 3,
-            'd_model': 64,
+            'd_model': 128,
             'num_heads': 4,
             'dff': 128,
             'fff': 64,
+            'num_layers': 4,
+            'with_cross': False,
             'dropout_rate': 0.2
         },
-        'lr': 0.001,
+        'lr': 0.0004,
         'loss': 'mse',
         'batch_size': 32,
-        'epochs': 1
+        'epochs': 100
     }
 
     return path_params, prep_params, eval_params, model_params
@@ -141,7 +144,8 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict) -> dict:
         num_past=spt_params['num_past'],
         num_spt=spt_params['num_spt'],
         spt_dict=spt_dict,
-        max_null_th=spt_params['null_th']
+        max_dist_th=spt_params['max_dist_th'],
+        max_null_th=spt_params['max_null_th']
     )
     x_array = x_array[mask]
     y_array = y_array[mask]
@@ -204,6 +208,7 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict) -> dict:
     # Save time max sizes
     res['time_max_sizes'] = x_time_max_sizes
     res['exg_time_max_sizes'] = exg_time_max_sizes
+    assert False
 
     return res
 

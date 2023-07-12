@@ -51,10 +51,10 @@ class GlobalSelfAttention(BaseAttention):
 
 
 class FeedForward(tf.keras.layers.Layer):
-    def __init__(self, d_model, dff, dropout_rate=0.1):
+    def __init__(self, d_model, dff, activation='relu', dropout_rate=0.1):
         super().__init__()
         self.seq = tf.keras.Sequential([
-            tf.keras.layers.Dense(dff, activation='relu'),
+            tf.keras.layers.Dense(dff, activation=activation),
             tf.keras.layers.Dense(d_model),
             tf.keras.layers.Dropout(dropout_rate)
         ])
@@ -68,15 +68,20 @@ class FeedForward(tf.keras.layers.Layer):
 
 
 class EncoderLayer(tf.keras.layers.Layer):
-    def __init__(self, *, d_model, num_heads, dff, dropout_rate=0.1):
+    def __init__(self, *, d_model, num_heads, dff, activation='relu', dropout_rate=0.1):
         super().__init__()
 
         self.self_attention = GlobalSelfAttention(
             num_heads=num_heads,
             key_dim=d_model,
-            dropout=dropout_rate)
+            dropout=dropout_rate
+        )
 
-        self.ffn = FeedForward(d_model, dff)
+        self.ffn = FeedForward(
+            d_model=d_model,
+            dff=dff,
+            activation=activation,
+        )
         self.last_attn_scores = None
 
     def call(self, x, **kwargs):
@@ -89,7 +94,7 @@ class EncoderLayer(tf.keras.layers.Layer):
 
 class CrossEncoderLayer(tf.keras.layers.Layer):
 
-    def __init__(self, *, d_model, num_heads, dff, dropout_rate=0.1):
+    def __init__(self, *, d_model, num_heads, dff, activation='relu', dropout_rate=0.1):
         super(CrossEncoderLayer, self).__init__()
 
         self.self_attention = GlobalSelfAttention(
@@ -103,7 +108,7 @@ class CrossEncoderLayer(tf.keras.layers.Layer):
             key_dim=d_model,
             dropout=dropout_rate)
 
-        self.ffn = FeedForward(d_model, dff)
+        self.ffn = FeedForward(d_model, dff, activation=activation)
         self.last_attn_scores = None
 
     # noinspection PyMethodOverriding
@@ -120,61 +125,87 @@ class CrossEncoderLayer(tf.keras.layers.Layer):
 
 class GlobalEncoderLayer(tf.keras.layers.Layer):
 
-    def __init__(self, *, d_model, num_heads, dff, dropout_rate=0.1):
+    def __init__(self, *, d_model, num_heads, dff, num_layers=1, activation='relu', with_cross=True, dropout_rate=0.1):
         super(GlobalEncoderLayer, self).__init__()
 
-        self.temporal_encoder = EncoderLayer(
-            d_model=d_model,
-            num_heads=num_heads,
-            dff=dff,
-            dropout_rate=dropout_rate,
-        )
-        self.spatial_encoder = EncoderLayer(
-            d_model=d_model,
-            num_heads=num_heads,
-            dff=dff,
-            dropout_rate=dropout_rate,
-        )
+        self.num_layers = num_layers
+        self.with_cross = with_cross
+        if with_cross:
+            exo_encoder_layer = CrossEncoderLayer
+        else:
+            exo_encoder_layer = EncoderLayer
 
-        self.exogenous_encoder = CrossEncoderLayer(
+        self.temporal_encoders = [
+            EncoderLayer(
+                d_model=d_model,
+                num_heads=num_heads,
+                dff=dff,
+                dropout_rate=dropout_rate,
+                activation=activation,
+            )
+            for _ in range(self.num_layers)
+        ]
+        self.spatial_encoders = [EncoderLayer(
             d_model=d_model,
             num_heads=num_heads,
             dff=dff,
             dropout_rate=dropout_rate,
+            activation=activation,
         )
+            for _ in range(self.num_layers)
+        ]
 
-        self.global_encoder = EncoderLayer(
-            d_model=d_model,
-            num_heads=num_heads,
-            dff=dff,
-            dropout_rate=dropout_rate,
-        )
+        self.exogenous_encoders = [
+            exo_encoder_layer(
+                d_model=d_model,
+                num_heads=num_heads,
+                dff=dff,
+                dropout_rate=dropout_rate,
+                activation=activation,
+            )
+            for _ in range(self.num_layers)
+        ]
 
-        self.last_attn_scores = None
+        self.global_encoders = [
+            EncoderLayer(
+                d_model=d_model,
+                num_heads=num_heads,
+                dff=dff,
+                dropout_rate=dropout_rate,
+                activation=activation,
+            )
+            for _ in range(self.num_layers)
+        ]
+
+        # self.last_attn_scores = None
 
     # noinspection PyMethodOverriding
     def call(self, time_x, exogenous_x, spatial_x, **kwargs):
-        # Compute temporal, spatial, and exogenous embedding
-        time_x = self.temporal_encoder(x=time_x)
-        spatial_x = self.spatial_encoder(x=spatial_x)
-        exogenous_x = self.exogenous_encoder(x=exogenous_x, context=time_x)
+        for i in range(self.num_layers):
+            # Compute temporal, spatial, and exogenous embedding
+            time_x = self.temporal_encoders[i](x=time_x)
+            spatial_x = self.spatial_encoders[i](x=spatial_x)
+            if self.with_cross:
+                exogenous_x = self.exogenous_encoders[i](x=exogenous_x, context=time_x)
+            else:
+                exogenous_x = self.exogenous_encoders[i](x=exogenous_x)
 
-        # Concatenate along T dimension
-        t1 = time_x.shape[1]
-        t2 = spatial_x.shape[1]
-        # t3 = exogenous_x.shape[1]
-        embedded_x = tf.concat([time_x, spatial_x, exogenous_x], axis=1)
+            # Concatenate along T dimension
+            t1 = time_x.shape[1]
+            t2 = spatial_x.shape[1]
+            # t3 = exogenous_x.shape[1]
+            embedded_x = tf.concat([time_x, spatial_x, exogenous_x], axis=1)
 
-        # Compute global cross attention
-        embedded_x = self.global_encoder(embedded_x)
+            # Compute global cross attention
+            embedded_x = self.global_encoders[i](embedded_x)
 
-        # Divide the tensor back into three separate tensors
-        time_x = embedded_x[:, :t1, :]
-        spatial_x = embedded_x[:, t1:t1 + t2, :]
-        exogenous_x = embedded_x[:, t1 + t2:, :]
+            # Divide the tensor back into three separate tensors
+            time_x = embedded_x[:, :t1, :]
+            spatial_x = embedded_x[:, t1:t1 + t2, :]
+            exogenous_x = embedded_x[:, t1 + t2:, :]
 
-        # Cache the last attention scores for plotting later
-        self.last_attn_scores = self.global_encoder.last_attn_scores
+        # # Cache the last attention scores for plotting later
+        # self.last_attn_scores = self.global_encoders[-1].last_attn_scores
 
         return time_x, exogenous_x, spatial_x
 

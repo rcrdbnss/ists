@@ -12,35 +12,27 @@ def my_model_search(path_params, prep_params, eval_params, model_params):
             {
                 'kernel_size': 3,
                 'd_model': 32,
-                'num_heads': 4,
-                'dff': 128,
+                'num_heads': 8,
+                'dff': 64,
                 'fff': 32,
                 'dropout_rate': 0.2
             },
             {
                 'kernel_size': 3,
-                'd_model': 64,
-                'num_heads': 4,
-                'dff': 256,
-                'fff': 64,
-                'dropout_rate': 0.2
-            },
-            {
-                'kernel_size': 3,
                 'd_model': 128,
-                'num_heads': 4,
+                'num_heads': 8,
                 'dff': 256,
                 'fff': 128,
                 'dropout_rate': 0.2
             },
         ],
         "transform_type": ["standard"],  # , "minmax"],
-        "epochs": [10, 50],  # , 100],
+        "epochs": [100],  # , 100],
         "loss": ['mse'],  # , "mae"],
-        "exg_num_past": [36, 60],
-        "spt_num_past": [12, 24],
-        "spt_num_spt": [2, 5, 7],
-        "x_num_past": [24, 36],
+        "exg_num_past": [60, 72],
+        "spt_num_past": [24, 36],
+        "spt_num_spt": [2, 5],
+        "x_num_past": [24, 36, 48],
     }
 
     configs = []
@@ -80,6 +72,9 @@ def main():
     for i in range(len(configs)):
         print('\n\n' + '-' * 50)
         print(i)
+        param = params[i]
+        print(param)
+
         # Extract pipeline configuration params
         path_params, prep_params, eval_params, model_params = configs[i]
         # Data step
@@ -87,11 +82,11 @@ def main():
         # Model step
         res = model_step(train_test_dict, model_params)
         # Extract tuned params
-        param = params[i]
         res.update(param)
-
         results.append(res)
+
         print(param)
+
 
     results = pd.DataFrame(results)
 

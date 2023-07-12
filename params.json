@@ -1,7 +1,7 @@
 {
     "path_params": {
-        "ts_filename": "../../data/Piezo/ts_er.xlsx",
-        "ctx_filename": "../../data/Piezo/data_ext_er.xlsx",
+        "ts_filename": "../../data/Piezo/ts_all.xlsx",
+        "ctx_filename": "../../data/Piezo/data_ext_all.xlsx",
         "ex_filename": "../../data/Piezo/NetCDF/exg_w_tp_t2m.pickle"
     },
 
@@ -9,7 +9,7 @@
         "ts_params": {
             "features": ["Piezometria (m)"],
             "label_col": "Piezometria (m)",
-            "num_past": 24,
+            "num_past": 48,
             "num_fut": 6,
             "freq": "M"
         },
@@ -21,10 +21,11 @@
         "spt_params": {
             "num_past": 24,
             "num_spt": 5,
-            "null_th": 13
+            "max_dist_th": 10000,
+            "max_null_th": 13
         },
         "exg_params": {
-            "num_past": 36,
+            "num_past": 72,
             "features": ["tp", "t2m_min", "t2m_max", "t2m_avg"],
             "time_feats": ["WY", "M"]
         }
@@ -46,9 +47,11 @@
             "num_heads": 4,
             "dff": 256,
             "fff": 64,
+            "num_layers": 1,
+            "with_cross": true,
             "dropout_rate": 0.1
         },
-        "lr": 0.001,
+        "lr": 0.0004,
         "loss": "mse",
         "batch_size": 32,
         "epochs": 10

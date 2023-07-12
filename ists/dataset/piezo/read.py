@@ -144,13 +144,26 @@ def load_data(
     # Read time series context (i.e. coordinates)
     ctx_dict = read_context(context_filename, id_col='Codice WISE stazione', x_col='X EPSG:3035',
                             y_col='Y EPSG:3035')
+
+    # Remove time series without context information
+    keys = list(ts_dict.keys())
+    for k in keys:
+        if k not in ctx_dict:
+            ts_dict.pop(k)
+
+    # Remove context information without time-series
+    keys = list(ctx_dict.keys())
+    for k in keys:
+        if k not in ts_dict:
+            # print(k)
+            ctx_dict.pop(k)
+
     # Read all exogenous series
     exg_dict = read_exogenous_series(ex_filename)
     # Link exogenous series with each irregular time series
     exg_dict = link_exogenous_series(exg_dict, ctx_dict)
     # Create distance matrix for each pair of irregular time series
     dist_matrix = create_spatial_matrix(ctx_dict)
-
     spt_dict = {}
     for k in ts_dict.keys():
         dists = dist_matrix.loc[k]

@@ -30,18 +30,24 @@ def prepare_spatial_data(
         num_past: int,
         num_spt: int,
         spt_dict: Dict[str, pd.Series],
+        max_dist_th: float = None,
         max_null_th: int = None,
 ) -> Tuple[List[np.array], np.ndarray]:
     max_null_th = max_null_th if max_null_th else np.float('inf')
+    max_dist_th = max_dist_th if max_dist_th else np.float('inf')
+
     spt_array = [[] for _ in range(num_spt)]
     mask = []
     arr_mapping = array_mapping(id_array, time_array, dist_x_array)
+    # Keep only spatial id that can be used
+    spt_dict = {k: s.index[(s.index.isin(id_array)) & (s <= max_dist_th)] for k, s in spt_dict.items()}
     for rid, rtime in tqdm(zip(id_array, time_array)):
-        spt_ids = spt_dict[rid].index.values
+        # Keep only spatial id that can be used
+        spt_ids = spt_dict[rid]
         spt_count = 0
         spt_mem = []
         for spt_id in spt_ids:
-            if rtime in arr_mapping[spt_id].index and arr_mapping[spt_id].loc[rtime, 'Null'] <= max_null_th:
+            if rtime in arr_mapping[spt_id].index and arr_mapping[spt_id].loc[rtime, 'Null'] <= max_null_th :
                 spt_count += 1
                 spt_mem.append(arr_mapping[spt_id].loc[rtime, 'Idx'])
 
@@ -59,7 +65,6 @@ def prepare_spatial_data(
     spt_res_array = []
     for i in range(num_spt):
         spt_res_array.append(np.array(spt_array[i])[:, -num_past:, :])
-
     return spt_res_array, np.array(mask)
 
 

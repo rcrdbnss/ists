@@ -63,6 +63,8 @@ class STTransformer(tf.keras.Model):
             num_heads,
             dff,
             fff,
+            num_layers=1,
+            with_cross=True,
             dropout_rate=0.1,
             null_max_size=None,
             time_max_sizes=None,
@@ -96,6 +98,8 @@ class STTransformer(tf.keras.Model):
             d_model=d_model,
             num_heads=num_heads,
             dff=dff,
+            num_layers=num_layers,
+            with_cross=with_cross,
             dropout_rate=dropout_rate
         )
 
