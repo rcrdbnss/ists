@@ -280,8 +280,8 @@ def model_step(train_test_dict: dict, model_params: dict) -> dict:
 
 
 def main():
-    path_params, prep_params, eval_params, model_params = get_params()
-    # path_params, prep_params, eval_params, model_params = parse_params()
+    # path_params, prep_params, eval_params, model_params = get_params()
+    path_params, prep_params, eval_params, model_params = parse_params()
 
     train_test_dict = data_step(path_params, prep_params, eval_params)
 
