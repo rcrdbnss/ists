@@ -244,7 +244,7 @@ def model_step(train_test_dict: dict, model_params: dict) -> dict:
         epochs=epochs,
         batch_size=batch_size,
         validation_split=0.1,
-        verbose=1,
+        verbose=2,
         extra={
             'x': train_test_dict['x_test'],
             'spt': train_test_dict['spt_test'],
@@ -280,8 +280,8 @@ def model_step(train_test_dict: dict, model_params: dict) -> dict:
 
 
 def main():
-    # path_params, prep_params, eval_params, model_params = get_params()
-    path_params, prep_params, eval_params, model_params = parse_params()
+    path_params, prep_params, eval_params, model_params = get_params()
+    # path_params, prep_params, eval_params, model_params = parse_params()
 
     train_test_dict = data_step(path_params, prep_params, eval_params)
 
