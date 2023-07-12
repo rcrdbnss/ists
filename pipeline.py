@@ -208,7 +208,6 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict) -> dict:
     # Save time max sizes
     res['time_max_sizes'] = x_time_max_sizes
     res['exg_time_max_sizes'] = exg_time_max_sizes
-    assert False
 
     return res
 
@@ -281,8 +280,8 @@ def model_step(train_test_dict: dict, model_params: dict) -> dict:
 
 
 def main():
-    # path_params, prep_params, eval_params, model_params = get_params()
-    path_params, prep_params, eval_params, model_params = parse_params()
+    path_params, prep_params, eval_params, model_params = get_params()
+    # path_params, prep_params, eval_params, model_params = parse_params()
 
     train_test_dict = data_step(path_params, prep_params, eval_params)
 
