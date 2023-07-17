@@ -33,9 +33,9 @@ def get_params():
     base_dir = '../../Dataset/AdbPo/Piezo/'
     path_params = {
         # main time-series (i.e. piezo time-series)
-        'ts_filename': os.path.join(base_dir, 'ts_er.xlsx'),
+        'ts_filename': os.path.join(base_dir, 'ts_all.xlsx'),
         # table with context information (i.e. coordinates...)
-        'ctx_filename': os.path.join(base_dir, 'data_ext_er.xlsx'),
+        'ctx_filename': os.path.join(base_dir, 'data_ext_all.xlsx'),
         # dictionary of exogenous time-series (i.e. temperature...)
         'ex_filename': os.path.join(base_dir, 'NetCDF', 'exg_w_tp_t2m.pickle')
     }
@@ -58,7 +58,7 @@ def get_params():
         },
         'spt_params': {
             'num_past': 24,
-            'num_spt': 5,
+            'num_spt': 2,
             'max_dist_th': 10000,
             'max_null_th': 13,
         },
@@ -86,14 +86,14 @@ def get_params():
             'num_heads': 4,
             'dff': 128,
             'fff': 64,
-            'num_layers': 4,
-            'with_cross': False,
+            'num_layers': 1,
+            'with_cross': True,
             'dropout_rate': 0.2
         },
         'lr': 0.0004,
         'loss': 'mse',
         'batch_size': 32,
-        'epochs': 100
+        'epochs': 5
     }
 
     return path_params, prep_params, eval_params, model_params
@@ -230,6 +230,7 @@ def model_step(train_test_dict: dict, model_params: dict) -> dict:
     nn_params['exg_time_max_sizes'] = train_test_dict['exg_time_max_sizes']
 
     model = ModelWrapper(
+        output_dir='./output',
         model_type=model_type,
         model_params=nn_params,
         transform_type=transform_type,
@@ -280,8 +281,8 @@ def model_step(train_test_dict: dict, model_params: dict) -> dict:
 
 
 def main():
-    path_params, prep_params, eval_params, model_params = get_params()
-    # path_params, prep_params, eval_params, model_params = parse_params()
+    # path_params, prep_params, eval_params, model_params = get_params()
+    path_params, prep_params, eval_params, model_params = parse_params()
 
     train_test_dict = data_step(path_params, prep_params, eval_params)
 

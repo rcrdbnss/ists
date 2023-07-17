@@ -1,5 +1,7 @@
 from typing import TypeVar, List
 
+import os
+import warnings
 import numpy as np
 import tensorflow as tf
 
@@ -8,6 +10,8 @@ from ..preprocessing import StandardScalerBatch, MinMaxScalerBatch
 from ..metrics import compute_metrics
 
 T = TypeVar('T', bound=tf.keras.Model)
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+warnings.filterwarnings('ignore', message='Found untraced functions.*')
 
 
 def get_transformer(transform_type: str) -> object:
@@ -94,11 +98,13 @@ class FunctionCallback(tf.keras.callbacks.Callback):
 class ModelWrapper(object):
     def __init__(
             self,
+            output_dir: str,
             model_type: str,
             model_params: dict,
             transform_type=None,
             loss: str = 'mse',
             lr: float = 0.001,
+            best_valid: bool = True
     ):
         self.model = get_model(model_type, model_params)
         self.transform_type = transform_type
@@ -107,12 +113,20 @@ class ModelWrapper(object):
             self.spt_transformer = get_transformer(transform_type)
             self.exg_transformer = get_transformer(transform_type)
 
+        self.model_path = os.path.join(output_dir, 'best_model')
+        self.model_name = ''
+        self.best_valid = best_valid
         self.loss = loss
         self.lr = lr
+
         self.history = None
 
         self.feature_mask = model_params['feature_mask']
         self.exg_feature_mask = model_params['exg_feature_mask']
+
+        # Check if model output dir exists
+        if not os.path.isdir(output_dir):
+            raise ValueError(f'Model output dir does not exist: {output_dir}')
 
     def _fit_transform(self, x: np.ndarray, spt: List[np.ndarray], exg: np.ndarray):
         x = np.copy(x)
@@ -144,6 +158,17 @@ class ModelWrapper(object):
             y = self.transformer.inverse_transform(y)
         return y
 
+    def _remove_model_checkpoint(self):
+        if os.path.isfile(self.model_path):
+            os.remove(self.model_path)
+
+    def _get_best_model(self):
+        if self.best_valid and not os.path.isdir(self.model_path):
+            raise ValueError('Impossible load saved model, it does not exist!')
+
+        if self.best_valid:
+            self.model = tf.keras.models.load_model(self.model_path)
+
     def fit(
             self,
             x: np.ndarray,
@@ -163,8 +188,15 @@ class ModelWrapper(object):
         x_test, spt_test, exg_test = self._fit_transform(x_test, spt_test, exg_test)
         y_test = self._label_transform(y_test)
 
-        callback = FunctionCallback(x_test, spt_test, exg_test, y_test)
-
+        test_callback = FunctionCallback(x_test, spt_test, exg_test, y_test)
+        model_checkpoint = tf.keras.callbacks.ModelCheckpoint(
+            self.model_path,
+            monitor='val_loss',
+            save_best_only=True,
+            mode='min',
+            verbose=1,
+            save_format='tf'
+        )
         optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr)  # , clipnorm=1.0, clipvalue=0.5)
         self.model.compile(
             loss=self.loss,
@@ -180,8 +212,12 @@ class ModelWrapper(object):
             batch_size=batch_size,
             validation_split=validation_split,
             verbose=verbose,
-            callbacks=[callback]
+            callbacks=[test_callback, model_checkpoint]
         )
+
+        # Load best model
+        self._get_best_model()
+        self._remove_model_checkpoint()
 
     def predict(self, x: np.ndarray, spt: List[np.ndarray], exg: np.ndarray):
         x, spt, exg = self._fit_transform(x, spt, exg)
