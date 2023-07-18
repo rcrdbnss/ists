@@ -96,7 +96,7 @@ class FunctionCallback(tf.keras.callbacks.Callback):
         print("Metrics epoch {}: {}".format(epoch, metrics))
 
 
-class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule, ABC):
+class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
     def __init__(self, d_model, warmup_steps=4000):
         super().__init__()
 
