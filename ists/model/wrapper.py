@@ -96,7 +96,7 @@ class FunctionCallback(tf.keras.callbacks.Callback):
         print("Metrics epoch {}: {}".format(epoch, metrics))
 
 
-class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
+class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule, ABC):
     def __init__(self, d_model, warmup_steps=4000):
         super().__init__()
 
@@ -111,6 +111,12 @@ class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
         arg2 = step * (self.warmup_steps ** -1.5)
 
         return tf.math.rsqrt(self.d_model) * tf.math.minimum(arg1, arg2)
+
+    def get_config(self):
+        return {
+            'd_model': self.d_model,
+            'warmup_steps': self.warmup_steps
+        }
 
 
 class ModelWrapper(object):
