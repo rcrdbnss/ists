@@ -99,10 +99,8 @@ def main():
     for i in range(len(configs)):
         param = params[i]  # Extract pipeline param
 
-        print('\n\n' + '-' * 50)
-        print(i)
-        print(param)
-        print(datetime.now())
+        print('\n\n' + '\u2500' * 80)
+        print(f"{i}:\t {param}\n{datetime.now()}\n")
 
         # Extract pipeline configuration params
         path_params, prep_params, eval_params, model_params = configs[i]
@@ -119,6 +117,8 @@ def main():
         # Save dataframe
         df_res = pd.DataFrame(results)
         df_res.to_csv(results_filename, index=False)
+
+        print(f'\n{param}\n')
 
     print('Hello World!')
 

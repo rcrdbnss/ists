@@ -79,7 +79,7 @@ def get_params():
 
     model_params = {
         'transform_type': 'standard',  # None 'minmax' 'standard'
-        'model_type': 'lstm',  # 'sttransformer', 'dense', 'lstm', 'bilstm', 'lstm_base', 'bilstm_base'
+        'model_type': 'sttransformer',  # 'sttransformer', 'dense', 'lstm', 'bilstm', 'lstm_base', 'bilstm_base'
         'nn_params': {
             'kernel_size': 3,
             'd_model': 128,
