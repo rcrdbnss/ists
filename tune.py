@@ -54,10 +54,10 @@ def my_model_search(path_params, prep_params, eval_params, model_params):
         "transform_type": ["standard"],  # , "minmax"],
         "epochs": [50],  # , 100],
         "loss": ['mse'],  # , "mae"],
-        "exg_num_past": [72],
-        "spt_num_past": [36],
-        "spt_num_spt": [2, 5],
-        "x_num_past": [36, 48],
+        "exg_num_past": [60, 72, 104],
+        "spt_num_past": [36, 48],
+        "spt_num_spt": [2, 5, 7],
+        "x_num_past": [36],
     }
 
     configs = []
