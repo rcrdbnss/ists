@@ -87,16 +87,13 @@ def my_model_search(path_params, prep_params, eval_params, model_params):
 
 
 def main():
-    output_dir = './output/stt_model'
     # Read input base params
     # path_params, prep_params, eval_params, model_params = get_params()
     path_params, prep_params, eval_params, model_params = parse_params()
     # Extract all possibilities
     configs, params = my_model_search(path_params, prep_params, eval_params, model_params)
 
-    if not os.path.isdir(output_dir):
-        os.makedirs(output_dir, exist_ok=True)
-    results_filename = os.path.join(output_dir, 'results.csv')
+    results_filename = './results.csv'
 
     results = []
     for i in range(len(configs)):

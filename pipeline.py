@@ -79,7 +79,7 @@ def get_params():
 
     model_params = {
         'transform_type': 'standard',  # None 'minmax' 'standard'
-        'model_type': 'sttransformer',  # 'sttransformer', 'dense', 'lstm', 'bilstm', 'lstm_base', 'bilstm_base'
+        'model_type': 'lstm',  # 'sttransformer', 'dense', 'lstm', 'bilstm', 'lstm_base', 'bilstm_base'
         'nn_params': {
             'kernel_size': 3,
             'd_model': 128,
@@ -93,7 +93,7 @@ def get_params():
         'lr': 0.0004,
         'loss': 'mse',
         'batch_size': 32,
-        'epochs': 5
+        'epochs': 50
     }
 
     return path_params, prep_params, eval_params, model_params
@@ -245,7 +245,7 @@ def model_step(train_test_dict: dict, model_params: dict) -> dict:
         epochs=epochs,
         batch_size=batch_size,
         validation_split=0.1,
-        verbose=2,
+        verbose=1,
         extra={
             'x': train_test_dict['x_test'],
             'spt': train_test_dict['spt_test'],
@@ -281,8 +281,8 @@ def model_step(train_test_dict: dict, model_params: dict) -> dict:
 
 
 def main():
-    # path_params, prep_params, eval_params, model_params = get_params()
-    path_params, prep_params, eval_params, model_params = parse_params()
+    path_params, prep_params, eval_params, model_params = get_params()
+    # path_params, prep_params, eval_params, model_params = parse_params()
 
     train_test_dict = data_step(path_params, prep_params, eval_params)
 
