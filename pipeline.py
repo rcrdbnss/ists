@@ -45,7 +45,7 @@ def get_params():
         'ts_params': {
             'features': ['Piezometria (m)'],
             'label_col': 'Piezometria (m)',
-            'num_past': 48,
+            'num_past': 36,
             'num_fut': 6,
             'freq': 'M',  # ['M', 'W', 'D']
         },
@@ -57,7 +57,7 @@ def get_params():
             'time_feats': ['M']  # ['D', 'DW', 'WY', 'M']
         },
         'spt_params': {
-            'num_past': 24,
+            'num_past': 36,
             'num_spt': 2,
             'max_dist_th': 10000,
             'max_null_th': 13,
@@ -82,13 +82,13 @@ def get_params():
         'model_type': 'sttransformer',  # 'sttransformer', 'dense', 'lstm', 'bilstm', 'lstm_base', 'bilstm_base'
         'nn_params': {
             'kernel_size': 3,
-            'd_model': 128,
-            'num_heads': 4,
-            'dff': 128,
-            'fff': 64,
+            'd_model': 32,
+            'num_heads': 8,
+            'dff': 64,
+            'fff': 32,
+            'dropout_rate': 0.2,
             'num_layers': 1,
             'with_cross': True,
-            'dropout_rate': 0.2
         },
         'lr': 0.0004,
         'loss': 'mse',

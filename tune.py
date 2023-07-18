@@ -1,5 +1,4 @@
-import os
-import json
+import copy
 from datetime import datetime
 
 import pandas as pd
@@ -64,6 +63,7 @@ def my_model_search(path_params, prep_params, eval_params, model_params):
     configs = []
     params = list(ParameterGrid(grid_search_params))
     for param in ParameterGrid(grid_search_params):
+
         # Prep params
         prep_params['ts_params']['num_past'] = param['x_num_past']
         prep_params['spt_params']['num_past'] = param['spt_num_past']
@@ -76,11 +76,16 @@ def my_model_search(path_params, prep_params, eval_params, model_params):
         model_params['loss'] = param['loss']
         model_params['nn_params'] = param['nn_params']
 
+        path_params_copy = copy.deepcopy(path_params)
+        prep_params_copy = copy.deepcopy(prep_params)
+        eval_params_copy = copy.deepcopy(eval_params)
+        model_params_copy = copy.deepcopy(model_params)
+
         config = (
-            path_params,
-            prep_params,
-            eval_params,
-            model_params
+            path_params_copy,
+            prep_params_copy,
+            eval_params_copy,
+            model_params_copy
         )
         configs.append(config)
     return configs, params
