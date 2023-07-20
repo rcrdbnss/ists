@@ -45,7 +45,7 @@ def get_params():
         'ts_params': {
             'features': ['Piezometria (m)'],
             'label_col': 'Piezometria (m)',
-            'num_past': 36,
+            'num_past': 48,
             'num_fut': 6,
             'freq': 'M',  # ['M', 'W', 'D']
         },
@@ -58,7 +58,7 @@ def get_params():
         },
         'spt_params': {
             'num_past': 36,
-            'num_spt': 2,
+            'num_spt': 5,
             'max_dist_th': 10000,
             'max_null_th': 13,
         },
@@ -90,10 +90,10 @@ def get_params():
             'num_layers': 1,
             'with_cross': True,
         },
-        'lr': 0.0004,
+        'lr': 0.0,
         'loss': 'mse',
         'batch_size': 32,
-        'epochs': 50
+        'epochs': 5
     }
 
     return path_params, prep_params, eval_params, model_params

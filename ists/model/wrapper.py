@@ -11,8 +11,10 @@ from ..preprocessing import StandardScalerBatch, MinMaxScalerBatch
 from ..metrics import compute_metrics
 
 T = TypeVar('T', bound=tf.keras.Model)
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-warnings.filterwarnings('ignore', message='Found untraced functions.*')
+
+
+# os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+# warnings.filterwarnings('ignore', message='Found untraced functions.*')
 
 
 def get_transformer(transform_type: str) -> object:
@@ -137,8 +139,9 @@ class ModelWrapper(object):
             self.spt_transformer = get_transformer(transform_type)
             self.exg_transformer = get_transformer(transform_type)
 
-        self.model_path = os.path.join(output_dir, 'best_model')
-        self.model_name = ''
+        self.checkpoint_dir = os.path.join(output_dir, 'best_model')
+        self.checkpoint_path = os.path.join(output_dir, 'best_model', 'cp.ckpt')
+
         self.best_valid = best_valid
         self.loss = loss
         self.lr = lr
@@ -152,6 +155,10 @@ class ModelWrapper(object):
         # Check if model output dir exists
         if not os.path.isdir(output_dir):
             raise ValueError(f'Model output dir does not exist: {output_dir}')
+
+        # Create checkpoint directory
+        if not os.path.isdir(self.checkpoint_dir):
+            os.makedirs(self.checkpoint_dir, exist_ok=True)
 
     def _fit_transform(self, x: np.ndarray, spt: List[np.ndarray], exg: np.ndarray):
         x = np.copy(x)
@@ -184,15 +191,16 @@ class ModelWrapper(object):
         return y
 
     def _remove_model_checkpoint(self):
-        if os.path.isfile(self.model_path):
-            os.remove(self.model_path)
+        if os.path.isdir(self.checkpoint_dir):
+            os.rmdir(self.checkpoint_dir)
 
     def _get_best_model(self):
-        if self.best_valid and not os.path.isdir(self.model_path):
+        if self.best_valid and not os.path.isdir(self.checkpoint_dir):
             raise ValueError('Impossible load saved model, it does not exist!')
 
         if self.best_valid:
-            self.model = tf.keras.models.load_model(self.model_path)
+            # self.model = tf.keras.models.load_model(self.model_path)
+            self.model.load_weights(self.checkpoint_path)
 
     def fit(
             self,
@@ -215,12 +223,13 @@ class ModelWrapper(object):
 
         test_callback = FunctionCallback(x_test, spt_test, exg_test, y_test)
         model_checkpoint = tf.keras.callbacks.ModelCheckpoint(
-            self.model_path,
+            self.checkpoint_path,
             monitor='val_loss',
             save_best_only=True,
+            save_weights_only=True,
             mode='min',
             verbose=1,
-            save_format='tf'
+            # save_format='tf'
         )
         if self.lr > 0:
             optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr)  # , clipnorm=1.0, clipvalue=0.5)
