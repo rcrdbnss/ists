@@ -121,6 +121,16 @@ class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule, ABC):
         }
 
 
+def delete_non_empty_directory(directory_path):
+    for filename in os.listdir(directory_path):
+        file_path = os.path.join(directory_path, filename)
+        if os.path.isfile(file_path):
+            os.remove(file_path)
+        elif os.path.isdir(file_path):
+            delete_non_empty_directory(file_path)  # Recursively delete subdirectories
+    os.rmdir(directory_path)
+
+
 class ModelWrapper(object):
     def __init__(
             self,
@@ -192,7 +202,7 @@ class ModelWrapper(object):
 
     def _remove_model_checkpoint(self):
         if os.path.isdir(self.checkpoint_dir):
-            os.rmdir(self.checkpoint_dir)
+            delete_non_empty_directory(self.checkpoint_dir)
 
     def _get_best_model(self):
         if self.best_valid and not os.path.isdir(self.checkpoint_dir):
