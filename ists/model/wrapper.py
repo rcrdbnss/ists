@@ -2,19 +2,14 @@ from abc import ABC
 from typing import TypeVar, List
 
 import os
-import warnings
 import numpy as np
 import tensorflow as tf
 
-from .model import STTransformer, BaselineModel
+from .model import STTransformer, TTransformer, BaselineModel
 from ..preprocessing import StandardScalerBatch, MinMaxScalerBatch
 from ..metrics import compute_metrics
 
 T = TypeVar('T', bound=tf.keras.Model)
-
-
-# os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-# warnings.filterwarnings('ignore', message='Found untraced functions.*')
 
 
 def get_transformer(transform_type: str) -> object:
@@ -31,6 +26,8 @@ def get_model(model_type: str, model_params) -> T:
     # Return the selected model
     if model_type == 'sttransformer':
         return STTransformer(**model_params)
+    elif model_type == 'ttransformer':
+        return TTransformer(**model_params)
     elif model_type == 'dense':
         return BaselineModel(feature_mask=model_params['feature_mask'], base_model='dense',
                              hidden_units=model_params['d_model'], skip_na=False, activation='gelu')

@@ -47,6 +47,9 @@
             "num_heads": 4,
             "dff": 256,
             "fff": 64,
+            "exg_cnn": true,
+            "spt_cnn": true,
+            "time_cnn": true,
             "num_layers": 1,
             "with_cross": true,
             "dropout_rate": 0.1

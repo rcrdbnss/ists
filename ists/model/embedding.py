@@ -103,17 +103,21 @@ class FixedEncoding(tf.keras.layers.Layer):
 
 
 class TemporalEmbedding(tf.keras.layers.Layer):
-    def __init__(self, d_model, kernel_size, feature_mask, null_max_size=None, time_max_sizes=None):
+    def __init__(self, d_model, kernel_size, feature_mask, with_cnn=True, null_max_size=None, time_max_sizes=None):
         super().__init__()
         # Embedding dimension & layer
         self.d_model = d_model
         # self.activation = tf.keras.layers.LeakyReLU(alpha=0.2)
-        self.embedding = tf.keras.layers.Conv1D(
-            filters=d_model,
-            kernel_size=kernel_size,
-            padding='same',
-            activation='gelu'
-        )
+        if with_cnn:
+            self.embedding = tf.keras.layers.Conv1D(
+                filters=d_model,
+                kernel_size=kernel_size,
+                padding='same',
+                activation='gelu'
+            )
+        else:
+            self.embedding = tf.keras.layers.LSTM(units=d_model, return_sequences=True)
+
         # Feature mask to split values for time encodings and null encoding
         self.feature_mask = np.array(feature_mask)
         if 1 in feature_mask and null_max_size is None:
@@ -166,7 +170,7 @@ class TemporalEmbedding(tf.keras.layers.Layer):
 
 
 class SpatialEmbedding(tf.keras.layers.Layer):
-    def __init__(self, d_model, kernel_size, spatial_size, feature_mask, time_max_sizes=None, null_max_size=None):
+    def __init__(self, d_model, kernel_size, spatial_size, feature_mask, with_cnn=True, time_max_sizes=None, null_max_size=None):
         super().__init__()
         self.spatial_size = spatial_size
         self.emb_layers = [
@@ -174,6 +178,7 @@ class SpatialEmbedding(tf.keras.layers.Layer):
                 d_model=d_model,
                 kernel_size=kernel_size,
                 feature_mask=feature_mask,
+                with_cnn=with_cnn,
                 time_max_sizes=time_max_sizes,
                 null_max_size=null_max_size
             )

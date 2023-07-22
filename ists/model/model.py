@@ -16,9 +16,11 @@ class TTransformer(tf.keras.Model):
             num_heads,
             dff,
             fff,
+            time_cnn=True,
             dropout_rate=0.1,
             null_max_size=None,
             time_max_sizes=None,
+            **kwargs
     ):
         super().__init__()
 
@@ -26,6 +28,7 @@ class TTransformer(tf.keras.Model):
             d_model=d_model,
             kernel_size=kernel_size,
             feature_mask=feature_mask,
+            with_cnn=time_cnn,
             null_max_size=null_max_size,
             time_max_sizes=time_max_sizes,
         )
@@ -41,7 +44,8 @@ class TTransformer(tf.keras.Model):
         self.dense = tf.keras.layers.Dense(fff, activation='gelu')
         self.final_layer = tf.keras.layers.Dense(1)
 
-    def call(self, x, **kwargs):
+    def call(self, inputs, **kwargs):
+        x = inputs[0]
         x = self.temporal_embedder(x)
         x = self.encoder(x)
         x = self.flatten(x)
@@ -63,6 +67,9 @@ class STTransformer(tf.keras.Model):
             num_heads,
             dff,
             fff,
+            exg_cnn=True,
+            spt_cnn=True,
+            time_cnn=True,
             num_layers=1,
             with_cross=True,
             dropout_rate=0.1,
@@ -76,12 +83,14 @@ class STTransformer(tf.keras.Model):
             d_model=d_model,
             kernel_size=kernel_size,
             feature_mask=feature_mask,
+            with_cnn=time_cnn,
             null_max_size=null_max_size,
             time_max_sizes=time_max_sizes,
         )
         self.exogenous_embedder = TemporalEmbedding(
             d_model=d_model,
             kernel_size=kernel_size,
+            with_cnn=exg_cnn,
             feature_mask=exg_feature_mask,
             time_max_sizes=exg_time_max_sizes,
         )
@@ -90,6 +99,7 @@ class STTransformer(tf.keras.Model):
             kernel_size=kernel_size,
             spatial_size=spatial_size,
             feature_mask=feature_mask,
+            with_cnn=spt_cnn,
             null_max_size=null_max_size,
             time_max_sizes=time_max_sizes,
         )
