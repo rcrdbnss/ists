@@ -3,7 +3,7 @@ import json
 import pickle
 import argparse
 
-from ists.dataset.piezo.read import load_data
+from ists.dataset.read import load_data
 from ists.preparation import prepare_data, prepare_train_test
 from ists.preparation import define_feature_mask, get_list_null_max_size
 from ists.preprocessing import get_time_max_sizes
@@ -90,7 +90,7 @@ def get_params():
             'spt_cnn': True,
             'time_cnn': True,
             'dropout_rate': 0.2,
-            'num_layers': 1,
+            'num_layers': 2,
             'with_cross': True,
         },
         'lr': 0.0,
@@ -100,6 +100,14 @@ def get_params():
     }
 
     return path_params, prep_params, eval_params, model_params
+
+
+def change_params(path_params: dict, base_string: str, new_string: str) -> dict:
+    path_params['ts_filename'] = path_params['ts_filename'].replace(base_string, new_string, 1)
+    path_params['ctx_filename'] = path_params['ctx_filename'].replace(base_string, new_string, 1)
+    path_params['ex_filename'] = path_params['ex_filename'].replace(base_string, new_string, 1)
+
+    return path_params
 
 
 def data_step(path_params: dict, prep_params: dict, eval_params: dict) -> dict:
@@ -112,7 +120,9 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict) -> dict:
     ts_dict, exg_dict, spt_dict = load_data(
         ts_filename=path_params['ts_filename'],
         context_filename=path_params['ctx_filename'],
-        ex_filename=path_params['ex_filename']
+        ex_filename=path_params['ex_filename'],
+        data_type=path_params['type']
+
     )
 
     # Prepare x, y, time, dist, id matrix
@@ -284,8 +294,9 @@ def model_step(train_test_dict: dict, model_params: dict) -> dict:
 
 
 def main():
-    path_params, prep_params, eval_params, model_params = get_params()
-    # path_params, prep_params, eval_params, model_params = parse_params()
+    # path_params, prep_params, eval_params, model_params = get_params()
+    path_params, prep_params, eval_params, model_params = parse_params()
+    path_params = change_params(path_params, '../../data', '../../Dataset/AdbPo')
 
     train_test_dict = data_step(path_params, prep_params, eval_params)
 

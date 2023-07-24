@@ -7,7 +7,7 @@ from tqdm import tqdm
 from .preprocessing import time_encoding
 
 
-def reindex_ts(ts: pd.DataFrame, freq: Literal['M', 'W']):
+def reindex_ts(ts: pd.DataFrame, freq: Literal['M', 'W', 'D']):
     min_dt, max_dt = ts.index.min(), ts.index.max()  # Read min max date
     # dt_name = ts.index.name  # Date Index name
     # Create a new monthly or week index
@@ -22,7 +22,7 @@ def reindex_ts(ts: pd.DataFrame, freq: Literal['M', 'W']):
 def null_distance_array(is_null: np.ndarray, method: Literal['log', 'lin'] = 'lin', max_dist: int = None) -> np.ndarray:
     # Initialize arrays
     distance_array = np.zeros(len(is_null))
-    last_observed_index = -1
+    last_observed_index = 0  # -1
     for i, val in enumerate(is_null):
         if not val:
             # Not null value
@@ -92,9 +92,9 @@ def sliding_window(
         num_past: int,
         num_fut: int,
 ) -> Optional[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
-    # Make the label col the first in dataframe
-    cols = ts.columns[ts.columns != label_col].to_list()
-    ts = ts[[label_col] + cols]
+    # # Make the label col the first in dataframe
+    # cols = ts.columns[ts.columns != label_col].to_list()
+    # ts = ts[[label_col] + cols]
 
     # Fix stride to 1
     stride = 1
@@ -188,6 +188,7 @@ def prepare_data(
         null_feat: Literal['code_bool', 'code_lin', 'bool', 'log', 'lin'] = None,
         null_max_dist: int = None,
         time_feats: List[str] = None,
+        with_fill: bool = True,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     # Empty array for saving x, y, time mask, and id for each record
     x_array = []
@@ -197,8 +198,15 @@ def prepare_data(
     dist_y_array = []
     id_array = []
 
+    assert label_col in features, f'Error, label {label_col} must be in the selected features'
+    features.remove(label_col)
+    features.insert(0, label_col)
+
     # Iterate each time-series
     for k, ts in tqdm(ts_dict.items()):
+        # Reorder time-series column in order to have the label at the start
+        ts = ts[features].copy()
+
         new_features = []
         # Reindex time index
         ts_new = reindex_ts(ts, freq=freq)
@@ -218,7 +226,8 @@ def prepare_data(
 
         # Forward fill null values
         ts_new['__LABEL__'] = ts_new[label_col]
-        ts_new[features + new_features] = ts_new[features + new_features].fillna(method='ffill')
+        if with_fill:
+            ts_new[features + new_features] = ts_new[features + new_features].fillna(method='ffill')
         # Sliding window step
         blob = sliding_window(ts_new, '__LABEL__', features + new_features, num_past, num_fut)
         if blob is None:

@@ -1,46 +1,46 @@
 {
     "path_params": {
-        "ts_filename": "../../data/Piezo/ts_all.xlsx",
-        "ctx_filename": "../../data/Piezo/data_ext_all.xlsx",
-        "ex_filename": "../../data/Piezo/NetCDF/exg_w_tp_t2m.pickle",
-            "type": "adbpo"
+        "ts_filename": "../../data/FrenchPiezo/dataset_2015_2021.csv",
+        "ctx_filename": "../../data/FrenchPiezo/dataset_stations.csv",
+        "ex_filename": "",
+        "type": "french"
     },
 
     "prep_params": {
         "ts_params": {
-            "features": ["Piezometria (m)"],
-            "label_col": "Piezometria (m)",
-            "num_past": 48,
-            "num_fut": 6,
-            "freq": "M"
+            "features": ["p", "tp", "e"],
+            "label_col": "p",
+            "num_past": 36,
+            "num_fut": 7,
+            "freq": "D"
         },
         "feat_params": {
             "null_feat": "code_lin",
             "null_max_dist": 12,
-            "time_feats": ["M"]
+            "time_feats": ["D", "WY", "M"]
         },
         "spt_params": {
             "num_past": 24,
-            "num_spt": 5,
-            "max_dist_th": 10000,
+            "num_spt": 2,
+            "max_dist_th": 0.5,
             "max_null_th": 13
         },
         "exg_params": {
-            "num_past": 72,
-            "features": ["tp", "t2m_min", "t2m_max", "t2m_avg"],
-            "time_feats": ["WY", "M"]
+            "num_past": 90,
+            "features": ["tp", "e"],
+            "time_feats": ["D", "WY", "M"]
         }
     },
 
     "eval_params": {
-        "train_start": "2009-01-01",
-        "test_start": "2019-01-01",
-        "label_th": 1,
+        "train_start": "2015-01-01",
+        "test_start": "2020-01-01",
+        "label_th": 0,
         "null_th": 13
     },
 
     "model_params": {
-        "transform_type": "standard",
+        "transform_type": null,
         "model_type": "sttransformer",
         "nn_params": {
             "kernel_size": 3,

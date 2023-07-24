@@ -14,9 +14,9 @@ T = TypeVar('T', bound=tf.keras.Model)
 
 def get_transformer(transform_type: str) -> object:
     # Return the selected model
-    if transform_type == 'standard':
+    if transform_type.startswith('standard'):
         return StandardScalerBatch(p1=1, p2=99)
-    elif transform_type == 'minmax':
+    elif transform_type.startswith('minmax'):
         return MinMaxScalerBatch()
     else:
         raise ValueError('Transformer {} is not supported, it must be "standard" or "minmax"')
@@ -168,10 +168,11 @@ class ModelWrapper(object):
             os.makedirs(self.checkpoint_dir, exist_ok=True)
 
     def _fit_transform(self, x: np.ndarray, spt: List[np.ndarray], exg: np.ndarray):
-        x = np.copy(x)
-        spt = [np.copy(arr) for arr in spt]
-        exg = np.copy(exg)
-        if self.transform_type:
+        if self.transform_type in ['standard', 'minmax']:
+            x = np.copy(x)
+            spt = [np.copy(arr) for arr in spt]
+            exg = np.copy(exg)
+
             cond_x = np.array(self.feature_mask) == 0
             x[:, :, cond_x] = self.transformer.fit_transform(x[:, :, cond_x])
 
@@ -182,11 +183,25 @@ class ModelWrapper(object):
 
             cond_exg = np.array(self.exg_feature_mask) == 0
             exg[:, :, cond_exg] = self.exg_transformer.fit_transform(exg[:, :, cond_exg])
+        elif self.transform_type.startwith('standard') or self.transform_type.startwith('standard'):
+            x = np.copy(x)
+            spt = [np.copy(arr) for arr in spt]
+
+            idx_x = self.transform_type.split('_')[1:]
+            idx_x = [int(idx) for idx in idx_x]
+
+            x[:, :, idx_x] = self.transformer.fit_transform(x[:, :, idx_x])
+
+            spt_size = len(spt)
+            spt_all = np.concatenate(spt, axis=1)
+            spt_all[:, :, idx_x] = self.spt_transformer.fit_transform(spt_all[:, :, idx_x])
+            spt = np.split(spt_all, spt_size, axis=1)
+
         return x, spt, exg
 
     def _label_transform(self, y):
-        y = np.copy(y)
         if self.transform_type:
+            y = np.copy(y)
             y = self.transformer.transform(y)
 
         return y
