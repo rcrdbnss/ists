@@ -19,10 +19,43 @@ def reindex_ts(ts: pd.DataFrame, freq: Literal['M', 'W', 'D']):
     return ts
 
 
+def drop_first_nan_rows(df: pd.DataFrame, cols: list, reverse: bool) -> pd.DataFrame:
+    def count_first_nan(s: pd.Series):
+        """ Count the number of nan at the start of the series"""
+        is_nan_arr = s.isnull().values  # Get array of booleans: True is nan; and, False is not nan
+        if reverse:
+            is_nan_arr = is_nan_arr[::-1]
+
+        # Consider only the first max_start_drop rows
+        size = len(is_nan_arr)
+        num_nan = size  # Set not nan idx to max size
+        for i, is_nan in enumerate(is_nan_arr[:size]):
+            # Check if is not nan
+            if not is_nan:
+                # Save the position of the first not nan value
+                num_nan = i
+                break
+        return num_nan
+
+    # Compute for each column the number of consecutive nan at the start
+    num_nans = df[cols].apply(count_first_nan, axis=0)
+    # Select the maximum number of consecutive nans
+    idx = np.max(num_nans)
+    if idx > 0:
+        if not reverse:
+            # Remove first nan rows
+            df = df.drop(df.index[:idx])
+        elif reverse and idx > 0:
+            # Remove last nan rows
+            df = df.drop(df.index[-idx:])
+
+    return df
+
+
 def null_distance_array(is_null: np.ndarray, method: Literal['log', 'lin'] = 'lin', max_dist: int = None) -> np.ndarray:
     # Initialize arrays
     distance_array = np.zeros(len(is_null))
-    last_observed_index = 0  # -1
+    last_observed_index = -1
     for i, val in enumerate(is_null):
         if not val:
             # Not null value
@@ -210,6 +243,11 @@ def prepare_data(
         new_features = []
         # Reindex time index
         ts_new = reindex_ts(ts, freq=freq)
+
+        # Drop nan label rows at the start
+        ts_new = drop_first_nan_rows(ts_new, features, reverse=False)
+        # Drop nan rows at the end
+        ts_new = drop_first_nan_rows(ts_new, [label_col], reverse=True)
 
         # Null indicator feature
         if null_feat:
