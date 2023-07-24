@@ -20,12 +20,24 @@ def read_french(filename: str, id_col: str, date_col: str, cols: List[str]) -> D
     return ts_dict
 
 
+def read_subset(subset_filename: str, id_col: str) -> list:
+    subset = pd.read_csv(subset_filename)[id_col].to_list()
+    return subset
+
+
 def load_frenchpiezo_data(
         ts_filename: str,
         context_filename: str,
+        subset_filename: str = None,
 ) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], Dict[str, pd.Series]]:
     # Read irregular french piezo time series
     ts_dict = read_french(ts_filename, id_col='bss', date_col='time', cols=['tp', 'e', 'p'])
+
+    # Filter based on a subset if any
+    if subset_filename:
+        subset = read_subset(subset_filename, id_col='bss')
+        ts_dict = {k: ts_dict[k] for k in subset if k in ts_dict}
+
     # Read time series context (i.e. coordinates)
     ctx_dict = read_context(context_filename, id_col='bss', x_col='x', y_col='y')
 

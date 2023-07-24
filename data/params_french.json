@@ -2,7 +2,7 @@
     "path_params": {
         "ts_filename": "../../data/FrenchPiezo/dataset_2015_2021.csv",
         "ctx_filename": "../../data/FrenchPiezo/dataset_stations.csv",
-        "ex_filename": "",
+        "ex_filename": "../../data/FrenchPiezo/subset_agg_th1_1.csv",
         "type": "french"
     },
 

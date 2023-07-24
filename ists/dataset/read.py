@@ -15,7 +15,8 @@ def load_data(
     if data_type == 'adbpo':
         return load_piezo_data(ts_filename=ts_filename, context_filename=context_filename, ex_filename=ex_filename)
     elif data_type == 'french':
-        return load_frenchpiezo_data(ts_filename=ts_filename, context_filename=context_filename)
+        return load_frenchpiezo_data(ts_filename=ts_filename, context_filename=context_filename,
+                                     subset_filename=ex_filename)
     elif data_type == 'ushcn':
         return load_ushcn_data(ts_filename=ts_filename)
     else:
