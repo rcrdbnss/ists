@@ -134,7 +134,7 @@ class ModelWrapper(object):
             output_dir: str,
             model_type: str,
             model_params: dict,
-            transform_type=None,
+            transform_type: str = None,
             loss: str = 'mse',
             lr: float = 0.001,
             best_valid: bool = True
@@ -183,7 +183,7 @@ class ModelWrapper(object):
 
             cond_exg = np.array(self.exg_feature_mask) == 0
             exg[:, :, cond_exg] = self.exg_transformer.fit_transform(exg[:, :, cond_exg])
-        elif self.transform_type.startwith('standard') or self.transform_type.startwith('standard'):
+        elif self.transform_type.startswith('standard') or self.transform_type.startswith('standard'):
             x = np.copy(x)
             spt = [np.copy(arr) for arr in spt]
 
