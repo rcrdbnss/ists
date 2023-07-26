@@ -10,7 +10,7 @@
         "ts_params": {
             "features": ["p", "tp", "e"],
             "label_col": "p",
-            "num_past": 36,
+            "num_past": 60,
             "num_fut": 7,
             "freq": "D"
         },
@@ -20,7 +20,7 @@
             "time_feats": ["D", "WY", "M"]
         },
         "spt_params": {
-            "num_past": 24,
+            "num_past": 30,
             "num_spt": 2,
             "max_dist_th": 0.5,
             "max_null_th": 13
@@ -40,7 +40,7 @@
     },
 
     "model_params": {
-        "transform_type": null,
+        "transform_type": "standard",
         "model_type": "sttransformer",
         "nn_params": {
             "kernel_size": 3,

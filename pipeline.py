@@ -300,9 +300,9 @@ def main():
 
     train_test_dict = data_step(path_params, prep_params, eval_params)
 
-    # with open('output/test.pickle', "wb") as f:
+    # with open('output/french.pickle', "wb") as f:
     #     pickle.dump(train_test_dict, f)
-    # with open('output/test.pickle', "rb") as f:
+    # with open('output/french.pickle', "rb") as f:
     #     train_test_dict = pickle.load(f)
 
     _ = model_step(train_test_dict, model_params)

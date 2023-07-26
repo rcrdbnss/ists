@@ -224,6 +224,12 @@ class ModelWrapper(object):
             # self.model = tf.keras.models.load_model(self.model_path)
             self.model.load_weights(self.checkpoint_path)
 
+    @staticmethod
+    def _get_spatial_array(x: np.ndarray, spt: List[np.ndarray]) -> List[np.ndarray]:
+        spt_num_past = spt[0].shape[1]
+        spt_x = [np.copy(x[:, -spt_num_past:, :])] + spt
+        return spt_x
+
     def fit(
             self,
             x: np.ndarray,
@@ -236,6 +242,7 @@ class ModelWrapper(object):
             verbose: int = 0,
             extra=None,
     ):
+        spt = self._get_spatial_array(x, spt)
         x, spt, exg = self._fit_transform(x, spt, exg)
         y = self._label_transform(y)
 
@@ -281,6 +288,7 @@ class ModelWrapper(object):
         self._remove_model_checkpoint()
 
     def predict(self, x: np.ndarray, spt: List[np.ndarray], exg: np.ndarray):
+        spt = self._get_spatial_array(x, spt)
         x, spt, exg = self._fit_transform(x, spt, exg)
 
         y_preds = self.model.predict([x] + [exg] + spt)
