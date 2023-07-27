@@ -3,7 +3,8 @@
         "ts_filename": "../../data/FrenchPiezo/dataset_2015_2021.csv",
         "ctx_filename": "../../data/FrenchPiezo/dataset_stations.csv",
         "ex_filename": "../../data/FrenchPiezo/subset_agg_th15_1.csv",
-        "type": "french"
+        "type": "french",
+        "nan_percentage": 0.2
     },
 
     "prep_params": {

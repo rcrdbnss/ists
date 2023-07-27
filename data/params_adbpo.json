@@ -3,7 +3,8 @@
         "ts_filename": "../../data/Piezo/ts_all.xlsx",
         "ctx_filename": "../../data/Piezo/data_ext_all.xlsx",
         "ex_filename": "../../data/Piezo/NetCDF/exg_w_tp_t2m.pickle",
-        "type": "adbpo"
+        "type": "adbpo",
+        "nan_percentage": 0.0
     },
 
     "prep_params": {

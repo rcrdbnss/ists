@@ -292,7 +292,7 @@ def prepare_data(
     return x_array, y_array, time_array, dist_x_array, dist_y_array, id_array
 
 
-def prepare_train_test(
+def filter_data(
         x_array: np.ndarray,
         y_array: np.ndarray,
         time_array: np.ndarray,
@@ -300,12 +300,10 @@ def prepare_train_test(
         dist_y_array: np.ndarray,
         id_array: np.ndarray,
         spt_array: List[np.ndarray],
-        exg_array: np.ndarray,
         train_start: str,
-        test_start: str,
         max_null_th: int = None,
         max_label_th: int = None,
-) -> dict:
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, List[np.ndarray]]:
     # cond 1 predicted value null distance not greater than a threshold -> dist_y_array <= max_label_th
     cond1 = dist_y_array <= max_label_th
     # cond 2 input array max null distance not greater than a threshold -> np.min(dist_x_array) <= max_null_th
@@ -321,8 +319,21 @@ def prepare_train_test(
     dist_y_array = dist_y_array[mask]
     id_array = id_array[mask]
     spt_array = [arr[mask] for arr in spt_array]
-    exg_array = exg_array[mask]
 
+    return x_array, y_array, time_array, dist_x_array, dist_y_array, id_array, spt_array
+
+
+def prepare_train_test(
+        x_array: np.ndarray,
+        y_array: np.ndarray,
+        time_array: np.ndarray,
+        dist_x_array: np.ndarray,
+        dist_y_array: np.ndarray,
+        id_array: np.ndarray,
+        spt_array: List[np.ndarray],
+        exg_array: np.ndarray,
+        test_start: str,
+) -> dict:
     is_train = time_array[:, -1] < pd.to_datetime(test_start).date()
     is_test = (dist_y_array == 0) & (~is_train)
     res = {

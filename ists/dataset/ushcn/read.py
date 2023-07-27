@@ -5,6 +5,7 @@ import pandas as pd
 
 from ..piezo.read import ContextType, create_ts_dict, create_spatial_matrix
 from ...preparation import reindex_ts
+from ..utils import insert_null_values
 
 
 def read_ushcn(filename: str, id_col: str, date_col: str, cols: List[str]) -> Dict[str, pd.DataFrame]:
@@ -47,6 +48,8 @@ def extract_ushcn_context(filename: str, id_col: str, x_col: str, y_col: str) ->
 
 def load_ushcn_data(
         ts_filename: str,
+        subset_filename: str = None,
+        nan_percentage: float = 0
 ) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], Dict[str, pd.Series]]:
     # Read irregular ushcn time series
     ts_dict = read_ushcn(
@@ -56,8 +59,24 @@ def load_ushcn_data(
         cols=["SNOW", "SNWD", "PRCP", "TMAX", "TMIN"],
     )
 
+    # Filter based on a subset if any
+    if subset_filename:
+        subset = pd.read_csv(subset_filename)['UNIQUE_ID'].to_list()
+        ts_dict = {k: ts_dict[k] for k in subset if k in ts_dict}
+
+    # Loop through the time-series and insert NaN values at the random indices
+    if nan_percentage > 0:
+        ts_dict = {k: insert_null_values(ts, nan_percentage, cols=['p']) for k, ts in ts_dict.items()}
+
     # Extract coordinates from ushcn series
     ctx_dict = extract_ushcn_context(filename=ts_filename, id_col='UNIQUE_ID', x_col='X', y_col='Y')
+
+    # Remove context information without time-series
+    keys = list(ctx_dict.keys())
+    for k in keys:
+        if k not in ts_dict:
+            # print(k)
+            ctx_dict.pop(k)
 
     # Create a copy of exogenous series from the raw time-series dict
     exg_dict = {

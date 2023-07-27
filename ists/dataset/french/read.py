@@ -1,10 +1,9 @@
 from typing import Dict, List, Tuple
-from datetime import datetime, timedelta
 
-import numpy as np
 import pandas as pd
 
 from ..piezo.read import create_ts_dict, read_context, create_spatial_matrix
+from ..utils import insert_null_values
 
 
 def read_french(filename: str, id_col: str, date_col: str, cols: List[str]) -> Dict[str, pd.DataFrame]:
@@ -20,23 +19,23 @@ def read_french(filename: str, id_col: str, date_col: str, cols: List[str]) -> D
     return ts_dict
 
 
-def read_subset(subset_filename: str, id_col: str) -> list:
-    subset = pd.read_csv(subset_filename)[id_col].to_list()
-    return subset
-
-
 def load_frenchpiezo_data(
         ts_filename: str,
         context_filename: str,
         subset_filename: str = None,
+        nan_percentage: float = 0
 ) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], Dict[str, pd.Series]]:
     # Read irregular french piezo time series
     ts_dict = read_french(ts_filename, id_col='bss', date_col='time', cols=['tp', 'e', 'p'])
 
     # Filter based on a subset if any
     if subset_filename:
-        subset = read_subset(subset_filename, id_col='bss')
+        subset = pd.read_csv(subset_filename)['bss'].to_list()
         ts_dict = {k: ts_dict[k] for k in subset if k in ts_dict}
+
+    # Loop through the time-series and insert NaN values at the random indices
+    if nan_percentage > 0:
+        ts_dict = {k: insert_null_values(ts, nan_percentage, cols=['p']) for k, ts in ts_dict.items()}
 
     # Read time series context (i.e. coordinates)
     ctx_dict = read_context(context_filename, id_col='bss', x_col='x', y_col='y')

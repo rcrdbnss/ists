@@ -4,7 +4,7 @@ import pickle
 import argparse
 
 from ists.dataset.read import load_data
-from ists.preparation import prepare_data, prepare_train_test
+from ists.preparation import prepare_data, prepare_train_test, filter_data
 from ists.preparation import define_feature_mask, get_list_null_max_size
 from ists.preprocessing import get_time_max_sizes
 from ists.spatial import prepare_exogenous_data, prepare_spatial_data
@@ -121,8 +121,8 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict) -> dict:
         ts_filename=path_params['ts_filename'],
         context_filename=path_params['ctx_filename'],
         ex_filename=path_params['ex_filename'],
-        data_type=path_params['type']
-
+        data_type=path_params['type'],
+        nan_percentage=path_params['nan_percentage']
     )
 
     # Prepare x, y, time, dist, id matrix
@@ -137,7 +137,7 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict) -> dict:
         null_max_dist=feat_params['null_max_dist'],
         time_feats=feat_params['time_feats'],
     )
-    print(f'Num of records: {len(x_array)}')
+    print(f'Num of records raw: {len(x_array)}')
     # Compute feature mask and time encoding max sizes
     x_feature_mask = define_feature_mask(
         base_features=ts_params['features'],
@@ -145,8 +145,7 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict) -> dict:
         time_feats=feat_params['time_feats']
     )
     x_time_max_sizes = get_time_max_sizes(feat_params['time_feats'])
-
-    print(f'Record feature mask: {x_feature_mask}')
+    print(f'Feature mask: {x_feature_mask}')
 
     # Prepare spatial matrix
     spt_array, mask = prepare_spatial_data(
@@ -166,7 +165,22 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict) -> dict:
     dist_x_array = dist_x_array[mask]
     dist_y_array = dist_y_array[mask]
     id_array = id_array[mask]
-    print(f'Num of records: {len(x_array)}')
+    print(f'Num of records after spatial augmentation: {len(x_array)}')
+
+    # Filter data before
+    x_array, y_array, time_array, dist_x_array, dist_y_array, id_array, spt_array = filter_data(
+        x_array=x_array,
+        y_array=y_array,
+        time_array=time_array,
+        dist_x_array=dist_x_array,
+        dist_y_array=dist_y_array,
+        id_array=id_array,
+        spt_array=spt_array,
+        train_start=eval_params['train_start'],
+        max_label_th=eval_params['label_th'],
+        max_null_th=eval_params['null_th']
+    )
+    print(f'Num of records after null filter: {len(x_array)}')
 
     # Prepare exogenous matrix
     exg_array, mask = prepare_exogenous_data(
@@ -188,7 +202,7 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict) -> dict:
     dist_y_array = dist_y_array[mask]
     id_array = id_array[mask]
     spt_array = [arr[mask] for arr in spt_array]
-    print(f'Num of records: {len(x_array)}')
+    print(f'Num of records after exogenous augmentation: {len(x_array)}')
 
     res = prepare_train_test(
         x_array=x_array,
@@ -199,10 +213,7 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict) -> dict:
         id_array=id_array,
         spt_array=spt_array,
         exg_array=exg_array,
-        train_start=eval_params['train_start'],
         test_start=eval_params['test_start'],
-        max_label_th=eval_params['label_th'],
-        max_null_th=eval_params['null_th']
     )
     print(f"X train: {len(res['x_train'])}")
     print(f"X test: {len(res['x_test'])}")
@@ -300,9 +311,9 @@ def main():
 
     train_test_dict = data_step(path_params, prep_params, eval_params)
 
-    # with open('output/french.pickle', "wb") as f:
+    # with open(f"output/{path_params['type']}.pickle", "wb") as f:
     #     pickle.dump(train_test_dict, f)
-    # with open('output/french.pickle', "rb") as f:
+    # with open(f"output/{path_params['type']}.pickle", "rb") as f:
     #     train_test_dict = pickle.load(f)
 
     _ = model_step(train_test_dict, model_params)

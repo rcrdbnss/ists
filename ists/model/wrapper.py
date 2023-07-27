@@ -14,9 +14,11 @@ T = TypeVar('T', bound=tf.keras.Model)
 
 def get_transformer(transform_type: str) -> object:
     # Return the selected model
-    if transform_type.startswith('standard'):
+    if transform_type == 'standard':
+        return StandardScalerBatch(p1=None, p2=None)
+    elif transform_type == 'standard01':
         return StandardScalerBatch(p1=1, p2=99)
-    elif transform_type.startswith('minmax'):
+    elif transform_type == 'minmax':
         return MinMaxScalerBatch()
     else:
         raise ValueError('Transformer {} is not supported, it must be "standard" or "minmax"')
@@ -168,7 +170,7 @@ class ModelWrapper(object):
             os.makedirs(self.checkpoint_dir, exist_ok=True)
 
     def _fit_transform(self, x: np.ndarray, spt: List[np.ndarray], exg: np.ndarray):
-        if self.transform_type in ['standard', 'minmax']:
+        if self.transform_type:
             x = np.copy(x)
             spt = [np.copy(arr) for arr in spt]
             exg = np.copy(exg)
@@ -183,19 +185,19 @@ class ModelWrapper(object):
 
             cond_exg = np.array(self.exg_feature_mask) == 0
             exg[:, :, cond_exg] = self.exg_transformer.fit_transform(exg[:, :, cond_exg])
-        elif self.transform_type.startswith('standard') or self.transform_type.startswith('standard'):
-            x = np.copy(x)
-            spt = [np.copy(arr) for arr in spt]
-
-            idx_x = self.transform_type.split('_')[1:]
-            idx_x = [int(idx) for idx in idx_x]
-
-            x[:, :, idx_x] = self.transformer.fit_transform(x[:, :, idx_x])
-
-            spt_size = len(spt)
-            spt_all = np.concatenate(spt, axis=1)
-            spt_all[:, :, idx_x] = self.spt_transformer.fit_transform(spt_all[:, :, idx_x])
-            spt = np.split(spt_all, spt_size, axis=1)
+        # elif self.transform_type.startswith('standard') or self.transform_type.startswith('standard'):
+        #     x = np.copy(x)
+        #     spt = [np.copy(arr) for arr in spt]
+        #
+        #     idx_x = self.transform_type.split('_')[1:]
+        #     idx_x = [int(idx) for idx in idx_x]
+        #
+        #     x[:, :, idx_x] = self.transformer.fit_transform(x[:, :, idx_x])
+        #
+        #     spt_size = len(spt)
+        #     spt_all = np.concatenate(spt, axis=1)
+        #     spt_all[:, :, idx_x] = self.spt_transformer.fit_transform(spt_all[:, :, idx_x])
+        #     spt = np.split(spt_all, spt_size, axis=1)
 
         return x, spt, exg
 

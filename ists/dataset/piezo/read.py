@@ -8,7 +8,7 @@ from sklearn.metrics import pairwise_distances
 from sklearn.metrics.pairwise import haversine_distances
 from pyproj import Transformer
 
-from ...utils import move_to_end_of_week_or_month
+from ..utils import move_to_end_of_week_or_month, insert_null_values
 
 
 class ContextType(TypedDict):
@@ -157,10 +157,16 @@ def create_spatial_matrix(coords_dict: Dict[str, ContextType], with_haversine: b
 def load_piezo_data(
         ts_filename: str,
         context_filename: str,
-        ex_filename: str
+        ex_filename: str,
+        nan_percentage: float = 0
 ) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], Dict[str, pd.Series]]:
     # Read irregular piezo time series
     ts_dict = read_piezo(ts_filename, id_col='Codice WISE stazione', date_col='Data', cols=['Piezometria (m)'])
+
+    # Loop through the time-series and insert NaN values at the random indices
+    if nan_percentage > 0:
+        ts_dict = {k: insert_null_values(ts, nan_percentage, cols=['p']) for k, ts in ts_dict.items()}
+
     # Read time series context (i.e. coordinates)
     ctx_dict = read_context(context_filename, id_col='Codice WISE stazione', x_col='X EPSG:3035',
                             y_col='Y EPSG:3035')
