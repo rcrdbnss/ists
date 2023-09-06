@@ -21,8 +21,8 @@ def reindex_ts(ts: pd.DataFrame, freq: Literal['M', 'W', 'D']):
 
 def drop_first_nan_rows(df: pd.DataFrame, cols: list, reverse: bool) -> pd.DataFrame:
     def count_first_nan(s: pd.Series):
-        """ Count the number of nan at the start of the series"""
-        is_nan_arr = s.isnull().values  # Get array of booleans: True is nan; and, False is not nan
+        """ Count the number of trues/nan at the start of the series"""
+        is_nan_arr = s.values  # s.isnull().values  # Get array of booleans: True is nan; and, False is not nan
         if reverse:
             is_nan_arr = is_nan_arr[::-1]
 
@@ -37,10 +37,8 @@ def drop_first_nan_rows(df: pd.DataFrame, cols: list, reverse: bool) -> pd.DataF
                 break
         return num_nan
 
-    # Compute for each column the number of consecutive nan at the start
-    num_nans = df[cols].apply(count_first_nan, axis=0)
-    # Select the maximum number of consecutive nans
-    idx = np.max(num_nans)
+    # Compute the number of consecutive starting rows with at least on nan
+    idx = count_first_nan(pd.isnull(df[cols]).any(axis=1))
     if idx > 0:
         if not reverse:
             # Remove first nan rows
