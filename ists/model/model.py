@@ -2,8 +2,8 @@ from typing import List
 
 import tensorflow as tf
 
-from ists.model.embedding import TemporalEmbedding, SpatialEmbedding
-from ists.model.encoder import GlobalEncoderLayer, EncoderLayer
+from .embedding import TemporalEmbedding, SpatialEmbedding
+from .encoder import GlobalEncoderLayer, EncoderLayer
 
 
 class TTransformer(tf.keras.Model):
@@ -67,6 +67,7 @@ class STTransformer(tf.keras.Model):
             num_heads,
             dff,
             fff,
+            activation='relu',
             exg_cnn=True,
             spt_cnn=True,
             time_cnn=True,
@@ -108,6 +109,7 @@ class STTransformer(tf.keras.Model):
             d_model=d_model,
             num_heads=num_heads,
             dff=dff,
+            activation=activation,
             num_layers=num_layers,
             with_cross=with_cross,
             dropout_rate=dropout_rate

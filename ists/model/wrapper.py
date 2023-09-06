@@ -78,23 +78,35 @@ def custom_mse_loss(y_true, y_pred):
 
 
 class FunctionCallback(tf.keras.callbacks.Callback):
-    def __init__(self, x: np.ndarray, spt: np.ndarray, exg: np.ndarray, y: np.ndarray):
+    def __init__(self, x: np.ndarray, spt: np.ndarray, exg: np.ndarray, y: np.ndarray, transformer: object = None):
         super(FunctionCallback, self).__init__()
         self.x = x
         self.spt = spt
         self.exg = exg
         self.y = y
+        self.transformer = transformer
+
+    def _label_inverse_transform(self, y):
+        if self.transformer is not None:
+            y = np.copy(y)
+            y = self.transformer.inverse_transform(y)
+        return y
 
     def on_epoch_end(self, epoch, logs=None):
         # Get predictions for the subset of data
         y_pred_subset = self.model.predict([self.x] + [self.exg] + self.spt)
 
-        # Compute the MAE on the subset
+        # Compute metrics on the subset on the transformed data domain
         metrics = compute_metrics(self.y, y_pred_subset)
         metrics = " ".join([f'{k}:{val:.4f}' for k, val in metrics.items()])
+        print("Metrics trf epoch {}: {}".format(epoch, metrics))
 
-        # Print or use the MAE as needed
-        print("Metrics epoch {}: {}".format(epoch, metrics))
+        # Compute metrics on the subset on the raw data domain
+        y_true_raw = self._label_inverse_transform(self.y)
+        y_pred_raw = self._label_inverse_transform(y_pred_subset)
+        metrics = compute_metrics(y_true_raw, y_pred_raw)
+        metrics = " ".join([f'{k}:{val:.4f}' for k, val in metrics.items()])
+        print("Metrics raw epoch {}: {}".format(epoch, metrics))
 
 
 class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule, ABC):

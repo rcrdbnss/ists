@@ -86,6 +86,7 @@ def get_params():
             'num_heads': 8,
             'dff': 64,
             'fff': 32,
+            'activation': 'relu',
             'exg_cnn': True,
             'spt_cnn': True,
             'time_cnn': True,
@@ -128,14 +129,15 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict) -> dict:
     # Prepare x, y, time, dist, id matrix
     x_array, y_array, time_array, dist_x_array, dist_y_array, id_array = prepare_data(
         ts_dict=ts_dict,
-        features=ts_params['features'],
-        label_col=ts_params['label_col'],
         num_past=ts_params['num_past'],
         num_fut=ts_params['num_fut'],
+        features=ts_params['features'],
+        label_col=ts_params['label_col'],
         freq=ts_params['freq'],
         null_feat=feat_params['null_feat'],
         null_max_dist=feat_params['null_max_dist'],
         time_feats=feat_params['time_feats'],
+        # with_fill=False
     )
     print(f'Num of records raw: {len(x_array)}')
     # Compute feature mask and time encoding max sizes
@@ -249,7 +251,7 @@ def model_step(train_test_dict: dict, model_params: dict) -> dict:
     nn_params['feature_mask'] = train_test_dict['x_feat_mask']
     nn_params['exg_feature_mask'] = train_test_dict['exg_feat_mask']
     nn_params['spatial_size'] = len(train_test_dict['spt_train'])
-    nn_params['null_max_size'] = int(train_test_dict['null_max_size'])
+    nn_params['null_max_size'] = train_test_dict['null_max_size']
     nn_params['time_max_sizes'] = train_test_dict['time_max_sizes']
     nn_params['exg_time_max_sizes'] = train_test_dict['exg_time_max_sizes']
 
@@ -261,6 +263,7 @@ def model_step(train_test_dict: dict, model_params: dict) -> dict:
         loss=loss,
         lr=lr,
     )
+
     model.fit(
         x=train_test_dict['x_train'],
         spt=train_test_dict['spt_train'],

@@ -125,7 +125,7 @@ class CrossEncoderLayer(tf.keras.layers.Layer):
 
 class GlobalEncoderLayer(tf.keras.layers.Layer):
 
-    def __init__(self, *, d_model, num_heads, dff, num_layers=1, activation='relu', with_cross=True, dropout_rate=0.1):
+    def __init__(self, *, d_model, num_heads, dff, activation='relu', num_layers=1, with_cross=True, dropout_rate=0.1):
         super(GlobalEncoderLayer, self).__init__()
 
         self.num_layers = num_layers
@@ -145,13 +145,14 @@ class GlobalEncoderLayer(tf.keras.layers.Layer):
             )
             for _ in range(self.num_layers)
         ]
-        self.spatial_encoders = [EncoderLayer(
-            d_model=d_model,
-            num_heads=num_heads,
-            dff=dff,
-            dropout_rate=dropout_rate,
-            activation=activation,
-        )
+        self.spatial_encoders = [
+            EncoderLayer(
+                d_model=d_model,
+                num_heads=num_heads,
+                dff=dff,
+                dropout_rate=dropout_rate,
+                activation=activation,
+            )
             for _ in range(self.num_layers)
         ]
 

@@ -6,6 +6,10 @@ import pandas as pd
 
 def get_time_max_sizes(codes: List[str]) -> List[int]:
     time_max_sizes = []
+    if not codes:
+        # Empty codes return an empty list
+        return time_max_sizes
+
     for code in codes:
         if code == 'D':
             # Extract max day value

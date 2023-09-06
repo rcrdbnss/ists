@@ -49,6 +49,7 @@
             "num_heads": 4,
             "dff": 256,
             "fff": 64,
+            "activation": "relu",
             "exg_cnn": true,
             "spt_cnn": true,
             "time_cnn": true,
