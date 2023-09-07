@@ -28,8 +28,6 @@ def get_model(model_type: str, model_params) -> T:
     # Return the selected model
     if model_type == 'sttransformer':
         return STTransformer(**model_params)
-    elif model_type == 'ttransformer':
-        return TTransformer(**model_params)
     elif model_type == 'dense':
         return BaselineModel(feature_mask=model_params['feature_mask'], base_model='dense',
                              hidden_units=model_params['d_model'], skip_na=False, activation='gelu')
@@ -264,7 +262,13 @@ class ModelWrapper(object):
         x_test, spt_test, exg_test = self._fit_transform(x_test, spt_test, exg_test)
         y_test = self._label_transform(y_test)
 
-        test_callback = FunctionCallback(x_test, spt_test, exg_test, y_test)
+        test_callback = FunctionCallback(
+            x_test,
+            spt_test,
+            exg_test,
+            y_test,
+            transformer=self.transformer if self.transform_type else None
+        )
         model_checkpoint = tf.keras.callbacks.ModelCheckpoint(
             self.checkpoint_path,
             monitor='val_loss',
