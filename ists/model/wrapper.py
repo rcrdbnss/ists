@@ -5,9 +5,11 @@ import os
 import numpy as np
 import tensorflow as tf
 
-from .model import STTransformer, TTransformer, BaselineModel
+from .model import STTransformer, BaselineModel
 from ..preprocessing import StandardScalerBatch, MinMaxScalerBatch
 from ..metrics import compute_metrics
+from .ablation import TransformerSpatial, TransformerTemporal, TransformerExogenous, TransformerTemporalSpatial, \
+    TransformerSpatialExogenous, TransformerTemporalExogenous
 
 T = TypeVar('T', bound=tf.keras.Model)
 
@@ -43,6 +45,18 @@ def get_model(model_type: str, model_params) -> T:
     elif model_type == 'bilstm_base':
         return BaselineModel(feature_mask=model_params['feature_mask'], base_model='bilstm',
                              hidden_units=model_params['d_model'], skip_na=False, activation='gelu')
+    elif model_type == 't':
+        return TransformerTemporal(**model_params)
+    elif model_type == 's':
+        return TransformerSpatial(**model_params)
+    elif model_type == 'e':
+        return TransformerExogenous(**model_params)
+    elif model_type == 'ts':
+        return TransformerTemporalSpatial(**model_params)
+    elif model_type == 'te':
+        return TransformerTemporalExogenous(**model_params)
+    elif model_type == 'se':
+        return TransformerSpatialExogenous(**model_params)
     else:
         raise ValueError('Model {} is not supported, it must be "sttransformer"')
 

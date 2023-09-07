@@ -3,56 +3,7 @@ from typing import List
 import tensorflow as tf
 
 from .embedding import TemporalEmbedding, SpatialEmbedding
-from .encoder import GlobalEncoderLayer, EncoderLayer
-
-
-class TTransformer(tf.keras.Model):
-    def __init__(
-            self,
-            *,
-            feature_mask,
-            kernel_size,
-            d_model,
-            num_heads,
-            dff,
-            fff,
-            time_cnn=True,
-            dropout_rate=0.1,
-            null_max_size=None,
-            time_max_sizes=None,
-            **kwargs
-    ):
-        super().__init__()
-
-        self.temporal_embedder = TemporalEmbedding(
-            d_model=d_model,
-            kernel_size=kernel_size,
-            feature_mask=feature_mask,
-            with_cnn=time_cnn,
-            null_max_size=null_max_size,
-            time_max_sizes=time_max_sizes,
-        )
-
-        self.encoder = EncoderLayer(
-            d_model=d_model,
-            num_heads=num_heads,
-            dff=dff,
-            dropout_rate=dropout_rate
-        )
-
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(fff, activation='gelu')
-        self.final_layer = tf.keras.layers.Dense(1)
-
-    def call(self, inputs, **kwargs):
-        x = inputs[0]
-        x = self.temporal_embedder(x)
-        x = self.encoder(x)
-        x = self.flatten(x)
-        x = self.dense(x)
-        pred = self.final_layer(x)  # (batch_size, target_len, target_vocab_size)
-
-        return pred
+from .encoder import GlobalEncoderLayer
 
 
 class STTransformer(tf.keras.Model):
