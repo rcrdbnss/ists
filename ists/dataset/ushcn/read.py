@@ -64,10 +64,6 @@ def load_ushcn_data(
         subset = pd.read_csv(subset_filename)['UNIQUE_ID'].to_list()
         ts_dict = {k: ts_dict[k] for k in subset if k in ts_dict}
 
-    # Loop through the time-series and insert NaN values at the random indices
-    if nan_percentage > 0:
-        ts_dict = {k: insert_null_values(ts, nan_percentage, cols=['p']) for k, ts in ts_dict.items()}
-
     # Extract coordinates from ushcn series
     ctx_dict = extract_ushcn_context(filename=ts_filename, id_col='UNIQUE_ID', x_col='X', y_col='Y')
 
@@ -93,5 +89,11 @@ def load_ushcn_data(
         dists = dists.sort_values(ascending=True)
         spt_dict[k] = dists
 
-    # exg_dict = {}
+    # Loop through the time-series and insert NaN values at the random indices
+    if nan_percentage > 0:
+        ts_dict = {
+            k: insert_null_values(ts, nan_percentage, cols=["TMAX"])
+            for k, ts in ts_dict.items()
+        }
+
     return ts_dict, exg_dict, spt_dict

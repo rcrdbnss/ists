@@ -11,23 +11,23 @@
         "ts_params": {
             "features": ["p", "tp", "e"],
             "label_col": "p",
-            "num_past": 56,
+            "num_past": 64,
             "num_fut": 7,
             "freq": "D"
         },
         "feat_params": {
-            "null_feat": "code_lin",
+            "null_feat": null,
             "null_max_dist": 12,
-            "time_feats": ["WY"]
+            "time_feats": null
         },
         "spt_params": {
             "num_past": 28,
-            "num_spt": 4,
+            "num_spt": 2,
             "max_dist_th": 0.5,
             "max_null_th": 13
         },
         "exg_params": {
-            "num_past": 56,
+            "num_past": 112,
             "features": ["tp", "e"],
             "time_feats": ["WY"]
         }
@@ -45,10 +45,10 @@
         "model_type": "sttransformer",
         "nn_params": {
             "kernel_size": 3,
-            "d_model": 32,
+            "d_model": 64,
             "num_heads": 4,
-            "dff": 64,
-            "fff": 32,
+            "dff": 128,
+            "fff": 64,
             "activation": "relu",
             "exg_cnn": true,
             "spt_cnn": true,

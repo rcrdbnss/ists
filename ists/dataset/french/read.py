@@ -33,10 +33,6 @@ def load_frenchpiezo_data(
         subset = pd.read_csv(subset_filename)['bss'].to_list()
         ts_dict = {k: ts_dict[k] for k in subset if k in ts_dict}
 
-    # Loop through the time-series and insert NaN values at the random indices
-    if nan_percentage > 0:
-        ts_dict = {k: insert_null_values(ts, nan_percentage, cols=['p']) for k, ts in ts_dict.items()}
-
     # Read time series context (i.e. coordinates)
     ctx_dict = read_context(context_filename, id_col='bss', x_col='x', y_col='y')
 
@@ -62,5 +58,11 @@ def load_frenchpiezo_data(
         dists = dists.sort_values(ascending=True)
         spt_dict[k] = dists
 
-    # exg_dict = {}
+    # Loop through the time-series and insert NaN values at the random indices
+    if nan_percentage > 0:
+        ts_dict = {
+            k: insert_null_values(ts, nan_percentage, cols=['p'])
+            for k, ts in ts_dict.items()
+        }
+
     return ts_dict, exg_dict, spt_dict

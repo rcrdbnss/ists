@@ -316,10 +316,73 @@ def main():
 
     # with open(f"output/{path_params['type']}.pickle", "wb") as f:
     #     pickle.dump(train_test_dict, f)
+    #     train_test_dict['params'] = {
+    #         'path_params': path_params,
+    #         'prep_params': prep_params,
+    #         'eval_params': eval_params,
+    #         'model_params': model_params,
+    #     }
+
     # with open(f"output/{path_params['type']}.pickle", "rb") as f:
     #     train_test_dict = pickle.load(f)
 
     _ = model_step(train_test_dict, model_params)
+
+    print('Hello World!')
+
+
+def main2():
+    conf_file = 'data/params_ushcn.json'
+    subsets = [
+        'subset_agg_th1_0.csv',
+        'subset_agg_th1_1.csv',
+        'subset_agg_th1_2.csv',
+        'subset_agg_th15_0.csv',
+        'subset_agg_th15_1.csv',
+        'subset_agg_th15_2.csv',
+        'subset_agg_th15_3.csv'
+    ]
+    with open(conf_file, 'r') as f:
+        conf = json.load(f)
+
+    for nan_num in [0.0, 0.2, 0.5, 0.8]:
+        for subset in subsets:
+            print(f"\n {subset}")
+            path_params, prep_params, eval_params, model_params = conf['path_params'], conf['prep_params'], conf['eval_params'], conf['model_params']
+            path_params["ex_filename"] = "../../data/USHCN/" + subset
+            path_params["nan_percentage"] = nan_num
+            path_params = change_params(path_params, '../../data', '../../Dataset/AdbPo')
+
+            train_test_dict = data_step(path_params, prep_params, eval_params)
+
+            with open(f"output/{path_params['type']}_{subset.replace('subset_agg_', '').replace('.csv', '')}_nan{int(nan_num * 10)}.pickle", "wb") as f:
+
+                # List of keys to remove
+                keys_to_remove = [
+                    'dist_x_train',
+                    'dist_x_test',
+
+                    'dist_y_train',
+                    'dist_y_test',
+
+                    'spt_train',
+                    'spt_test',
+
+                    'exg_train',
+                    'exg_test',
+                ]
+
+                # Remove keys
+                for key in keys_to_remove:
+                    train_test_dict.pop(key)
+
+                train_test_dict['params'] = {
+                    'path_params': path_params,
+                    'prep_params': prep_params,
+                    'eval_params': eval_params,
+                    'model_params': model_params,
+                }
+                pickle.dump(train_test_dict, f)
 
     print('Hello World!')
 
