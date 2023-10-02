@@ -2,32 +2,32 @@
     "path_params": {
         "ts_filename": "../../data/USHCN/pivot_1990_1993_thr4_normalize.csv",
         "ctx_filename": "",
-        "ex_filename": "../../data/USHCN/subset_agg_th1_0.csv",
+        "ex_filename": "../../data/USHCN/subset_agg_th1_1.csv",
         "type": "ushcn",
-        "nan_percentage": 0.0
+        "nan_percentage": 0.2
     },
 
     "prep_params": {
         "ts_params": {
-            "features": ["PRCP", "SNOW", "SNWD", "TMAX", "TMIN"],
+            "features": ["TMAX"],
             "label_col": "TMAX",
-            "num_past": 64,
+            "num_past": 96,
             "num_fut": 7,
             "freq": "D"
         },
         "feat_params": {
-            "null_feat": null,
+            "null_feat": "code_bool",
             "null_max_dist": 12,
-            "time_feats": null
+            "time_feats": ["WY"]
         },
         "spt_params": {
-            "num_past": 56,
-            "num_spt": 2,
-            "max_dist_th": 0.5,
+            "num_past": 48,
+            "num_spt": 4,
+            "max_dist_th": 0.25,
             "max_null_th": 13
         },
         "exg_params": {
-            "num_past": 72,
+            "num_past": 96,
             "features": ["SNOW", "SNWD", "PRCP", "TMIN"],
             "time_feats": ["WY"]
         }
@@ -45,10 +45,10 @@
         "model_type": "sttransformer",
         "nn_params": {
             "kernel_size": 3,
-            "d_model": 128,
+            "d_model": 64,
             "num_heads": 4,
-            "dff": 256,
-            "fff": 128,
+            "dff": 128,
+            "fff": 64,
             "activation": "relu",
             "exg_cnn": true,
             "spt_cnn": true,
@@ -57,9 +57,9 @@
             "with_cross": true,
             "dropout_rate": 0.1
         },
-        "lr": 0.0004,
+        "lr": 0.00004,
         "loss": "mse",
         "batch_size": 64,
-        "epochs": 10
+        "epochs": 20
     }
 }
