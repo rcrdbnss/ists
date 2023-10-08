@@ -44,7 +44,7 @@
         "transform_type": null,
         "model_type": "sttransformer",
         "nn_params": {
-            "kernel_size": 3,
+            "kernel_size": 5,
             "d_model": 64,
             "num_heads": 4,
             "dff": 128,
