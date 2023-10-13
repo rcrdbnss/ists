@@ -111,7 +111,7 @@ def change_params(path_params: dict, base_string: str, new_string: str) -> dict:
     return path_params
 
 
-def data_step(path_params: dict, prep_params: dict, eval_params: dict) -> dict:
+def data_step(path_params: dict, prep_params: dict, eval_params: dict, keep_nan: bool = False) -> dict:
     ts_params = prep_params['ts_params']
     feat_params = prep_params['feat_params']
     spt_params = prep_params['spt_params']
@@ -137,7 +137,7 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict) -> dict:
         null_feat=feat_params['null_feat'],
         null_max_dist=feat_params['null_max_dist'],
         time_feats=feat_params['time_feats'],
-        # with_fill=False
+        with_fill=not keep_nan
     )
     print(f'Num of records raw: {len(x_array)}')
     # Compute feature mask and time encoding max sizes
@@ -312,7 +312,7 @@ def main():
     path_params, prep_params, eval_params, model_params = parse_params()
     # path_params = change_params(path_params, '../../data', '../../Dataset/AdbPo')
 
-    train_test_dict = data_step(path_params, prep_params, eval_params)
+    train_test_dict = data_step(path_params, prep_params, eval_params, keep_nan=False)
 
     # with open(f"output/{path_params['type']}.pickle", "wb") as f:
     #     pickle.dump(train_test_dict, f)
@@ -348,14 +348,17 @@ def main2():
     for nan_num in [0.0, 0.2, 0.5, 0.8]:
         for subset in subsets:
             print(f"\n {subset}")
-            path_params, prep_params, eval_params, model_params = conf['path_params'], conf['prep_params'], conf['eval_params'], conf['model_params']
+            path_params, prep_params, eval_params, model_params = conf['path_params'], conf['prep_params'], conf[
+                'eval_params'], conf['model_params']
             path_params["ex_filename"] = "../../data/USHCN/" + subset
             path_params["nan_percentage"] = nan_num
             path_params = change_params(path_params, '../../data', '../../Dataset/AdbPo')
 
             train_test_dict = data_step(path_params, prep_params, eval_params)
 
-            with open(f"output/{path_params['type']}_{subset.replace('subset_agg_', '').replace('.csv', '')}_nan{int(nan_num * 10)}.pickle", "wb") as f:
+            with open(
+                    f"output/{path_params['type']}_{subset.replace('subset_agg_', '').replace('.csv', '')}_nan{int(nan_num * 10)}.pickle",
+                    "wb") as f:
 
                 # List of keys to remove
                 keys_to_remove = [
