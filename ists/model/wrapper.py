@@ -324,7 +324,6 @@ class ModelWrapper(object):
         # Load best model
         self._get_best_model()
         self._remove_model_checkpoint()
-        assert False
 
     def predict(self, x: np.ndarray, spt: List[np.ndarray], exg: np.ndarray):
         spt = self._get_spatial_array(x, spt)
