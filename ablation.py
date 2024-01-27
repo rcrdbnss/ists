@@ -164,8 +164,8 @@ def main():
         res_dir=res_dir,
         data_dir=data_dir,
         model_dir=model_dir,
-        ablation_encoder=True,
         ablation_embedder=True,
+        ablation_encoder=True,
     )
 
     print('Hello World!')
