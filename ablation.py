@@ -128,6 +128,7 @@ def ablation(
     }
 
     for name, func in ablations_mapping.items():
+        print(f'\n{name}')
         with open(pickle_path, "rb") as f:
             train_test_dict = pickle.load(f)
         train_test_dict = func(train_test_dict)
