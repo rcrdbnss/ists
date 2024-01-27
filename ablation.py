@@ -86,7 +86,9 @@ def ablation(
         model_params: dict,
         res_dir: str,
         data_dir: str,
-        model_dir: str
+        model_dir: str,
+        ablation_embedder: bool = True,
+        ablation_encoder: bool = True,
 ):
     subset = os.path.basename(path_params['ex_filename']).replace('subset_agg_', '').replace('.csv', '')
     nan_percentage = path_params['nan_percentage']
@@ -116,16 +118,24 @@ def ablation(
 
     ablations_mapping = {
         'STT': no_ablation,
-        'STT w/o time enc': ablation_embedder_no_time,
-        'STT w/o null enc': ablation_embedder_no_null,
-        'STT w/o time null enc': ablation_embedder_no_time_null,
-        'T': ablation_encoder_t,
-        'S': ablation_encoder_s,
-        'E': ablation_encoder_e,
-        'TE': ablation_encoder_te,
-        'TS': ablation_encoder_ts,
-        'SE': ablation_encoder_se,
     }
+
+    if ablation_embedder:
+        ablations_mapping.update({
+            'STT w/o time enc': ablation_embedder_no_time,
+            'STT w/o null enc': ablation_embedder_no_null,
+            'STT w/o time null enc': ablation_embedder_no_time_null,
+        })
+
+    if ablation_encoder:
+        ablations_mapping.update({
+            'T': ablation_encoder_t,
+            'S': ablation_encoder_s,
+            'E': ablation_encoder_e,
+            'TE': ablation_encoder_te,
+            'TS': ablation_encoder_ts,
+            'SE': ablation_encoder_se,
+        })
 
     for name, func in ablations_mapping.items():
         print(f'\n{name}')
@@ -136,6 +146,7 @@ def ablation(
         pd.DataFrame(results).T.to_csv(results_path, index=True)
 
     return pd.DataFrame(results).T
+
 
 def main():
     res_dir = './output/results'
@@ -153,6 +164,8 @@ def main():
         res_dir=res_dir,
         data_dir=data_dir,
         model_dir=model_dir,
+        ablation_encoder=True,
+        ablation_embedder=True,
     )
 
     print('Hello World!')
