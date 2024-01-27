@@ -7,7 +7,7 @@ from pipeline import data_step, model_step, parse_params, change_params
 
 
 def no_ablation(train_test_dict) -> dict:
-    train_test_dict['params']['model_params']['model_type'] = "sttransformer"
+    # train_test_dict['params']['model_params']['model_type'] = "sttransformer"
     return train_test_dict
 
 
@@ -116,15 +116,16 @@ def ablation(
         }
         pickle.dump(train_test_dict, f)
 
+    selected_model = train_test_dict['params']['model_params']['model_type'][:3].upper()
     ablations_mapping = {
-        'STT': no_ablation,
+        selected_model: no_ablation,
     }
 
     if ablation_embedder:
         ablations_mapping.update({
-            'STT w/o time enc': ablation_embedder_no_time,
-            'STT w/o null enc': ablation_embedder_no_null,
-            'STT w/o time null enc': ablation_embedder_no_time_null,
+            f'{selected_model} w/o time enc': ablation_embedder_no_time,
+            f'{selected_model} w/o null enc': ablation_embedder_no_null,
+            f'{selected_model} w/o time null enc': ablation_embedder_no_time_null,
         })
 
     if ablation_encoder:
@@ -138,11 +139,18 @@ def ablation(
         })
 
     for name, func in ablations_mapping.items():
-        print(f'\n{name}')
+        # Load data
         with open(pickle_path, "rb") as f:
             train_test_dict = pickle.load(f)
+
+        # Configure ablation test
         train_test_dict = func(train_test_dict)
+
+        # Exec ablation test
+        print(f"\n{name}: {train_test_dict['params']['model_params']['model_type']}")
         results[name] = model_step(train_test_dict, train_test_dict['params']['model_params'], checkpoint_path)
+
+        # Save results
         pd.DataFrame(results).T.to_csv(results_path, index=True)
 
     return pd.DataFrame(results).T
