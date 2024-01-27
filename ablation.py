@@ -134,6 +134,7 @@ def ablation(
         results[name] = model_step(train_test_dict, train_test_dict['params']['model_params'], checkpoint_path)
         pd.DataFrame(results).T.to_csv(results_path, index=True)
 
+    return pd.DataFrame(results).T
 
 def main():
     res_dir = './output/results'
