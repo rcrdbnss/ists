@@ -199,6 +199,16 @@ def ablation(
             f'{selected_model} w/o time null enc': ablation_embedder_no_time_null,
         })
 
+    if ablation_encoder:
+        ablations_mapping.update({
+            'T': ablation_encoder_t,
+            'S': ablation_encoder_s,
+            'E': ablation_encoder_e,
+            'TE': ablation_encoder_te,
+            'TS': ablation_encoder_ts,
+            'SE': ablation_encoder_se,
+        })
+
     if ablation_extra:
         ablations_mapping.update(ablation_extra)
 
