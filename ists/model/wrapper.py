@@ -317,7 +317,7 @@ class ModelWrapper(object):
             loss=self.loss,
             optimizer=optimizer,
             metrics=['mae', 'mse'],
-            run_eagerly=True,
+            # run_eagerly=True,
         )
 
         self.history = self.model.fit(
