@@ -2,7 +2,7 @@ from typing import List
 
 import tensorflow as tf
 
-from .embedding import TemporalEmbedding, SpatialEmbedding
+from .embedding import TemporalEmbedding, SpatialEmbedding2
 from .encoder import GlobalEncoderLayer
 
 
@@ -28,33 +28,33 @@ class STTransformer(tf.keras.Model):
             null_max_size=None,
             time_max_sizes=None,
             exg_time_max_sizes=None,
+            do_exg=True, do_spt=True, do_glb=True, do_target=True
     ):
         super().__init__()
+        self.do_exg, self.do_spt = do_exg, do_spt
+        self.do_target = do_target
 
-        self.temporal_embedder = TemporalEmbedding(
-            d_model=d_model,
-            kernel_size=kernel_size,
-            feature_mask=feature_mask,
-            with_cnn=time_cnn,
-            null_max_size=null_max_size,
-            time_max_sizes=time_max_sizes,
-        )
-        self.exogenous_embedder = TemporalEmbedding(
-            d_model=d_model,
-            kernel_size=kernel_size,
-            with_cnn=exg_cnn,
-            feature_mask=exg_feature_mask,
-            time_max_sizes=exg_time_max_sizes,
-        )
-        self.spatial_embedder = SpatialEmbedding(
-            d_model=d_model,
-            kernel_size=kernel_size,
-            spatial_size=spatial_size,
-            feature_mask=feature_mask,
-            with_cnn=spt_cnn,
-            null_max_size=null_max_size,
-            time_max_sizes=time_max_sizes,
-        )
+        self.exogenous_embedder = SpatialEmbedding2(
+            TemporalEmbedding(
+                d_model=d_model,
+                kernel_size=kernel_size,
+                feature_mask=feature_mask,
+                with_cnn=exg_cnn,
+                null_max_size=null_max_size,
+                time_max_sizes=exg_time_max_sizes,
+            )
+        ) if self.do_exg else lambda x: None
+
+        self.spatial_embedder = SpatialEmbedding2(
+            TemporalEmbedding(
+                d_model=d_model,
+                kernel_size=kernel_size,
+                feature_mask=feature_mask,
+                with_cnn=spt_cnn,
+                null_max_size=null_max_size,
+                time_max_sizes=time_max_sizes,
+            )
+        ) if self.do_spt else lambda x: None
 
         self.encoder = GlobalEncoderLayer(
             d_model=d_model,
@@ -62,8 +62,8 @@ class STTransformer(tf.keras.Model):
             dff=dff,
             activation=activation,
             num_layers=num_layers,
-            with_cross=with_cross,
-            dropout_rate=dropout_rate
+            dropout_rate=dropout_rate,
+            do_exg=do_exg, do_spt=do_spt, do_glb=do_glb,
         )
 
         self.flatten = tf.keras.layers.Flatten()
@@ -72,16 +72,26 @@ class STTransformer(tf.keras.Model):
         self.last_attn_scores = None
 
     def call(self, inputs, **kwargs):
-        temporal_x = inputs[0]
-        exogenous_x = inputs[1]
-        spatial_array = inputs[2:]
+        exg_arr, spt_arr = inputs
+        if (self.do_exg, self.do_spt, self.do_target) == (False, True, False):
+            exg_arr = []
+            spt_arr = spt_arr[1:]
+        elif (self.do_exg, self.do_spt, self.do_target) == (False, True, True):
+            exg_arr = []
+        elif (self.do_exg, self.do_spt, self.do_target) == (True, False, False):
+            exg_arr = exg_arr[1:]
+            spt_arr = []
+        elif (self.do_exg, self.do_spt, self.do_target) == (True, False, True):
+            spt_arr = []
+        elif (self.do_exg, self.do_spt, self.do_target) == (True, True, False):
+            exg_arr = exg_arr[1:]
+            spt_arr = spt_arr[1:]
 
-        temporal_x = self.temporal_embedder(temporal_x)
-        exogenous_x = self.exogenous_embedder(exogenous_x)
-        spatial_x = self.spatial_embedder(spatial_array)
+        exg_x = self.exogenous_embedder(exg_arr)
+        spt_x = self.spatial_embedder(spt_arr)
+        exogenous_emb, spatial_emb = self.encoder((exg_x, spt_x))
+        embedded_x = tf.concat([exogenous_emb, spatial_emb], axis=1)
 
-        temporal_emb, exogenous_emb, spatial_emb = self.encoder(temporal_x, exogenous_x, spatial_x)
-        embedded_x = tf.concat([temporal_emb, exogenous_emb, spatial_emb], axis=1)
         embedded_x = self.flatten(embedded_x)
         embedded_x = self.dense(embedded_x)
         pred = self.final_layer(embedded_x)

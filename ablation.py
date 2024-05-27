@@ -1,8 +1,11 @@
 import os
 import pickle
+import random
+from copy import deepcopy
 
 import numpy as np
 import pandas as pd
+import tensorflow as tf
 
 from pipeline import data_step, model_step, parse_params, change_params
 
@@ -149,45 +152,27 @@ def ablation_encoder_stt_mts_e(train_test_dict) -> dict:
     return train_test_dict
 
 
+def ablation_no_global_encoder(train_test_dict) -> dict:
+    train_test_dict['params']['model_params']['model_type'] = "no_glb"
+    return train_test_dict
+
+
 def ablation(
-        path_params: dict,
-        prep_params: dict,
-        eval_params: dict,
-        model_params: dict,
-        res_dir: str,
-        data_dir: str,
-        model_dir: str,
+        train_test_dict: dict,
+        results_path: str,
+        pickle_path: str,
+        checkpoint_path: str,
         ablation_embedder: bool = True,
         ablation_encoder: bool = True,
         ablation_extra: dict = None
 ):
-    subset = os.path.basename(path_params['ex_filename']).replace('subset_agg_', '').replace('.csv', '')
-    nan_percentage = path_params['nan_percentage']
-    num_fut = prep_params['ts_params']['num_fut']
+    if os.path.exists(results_path):
+        results = pd.read_csv(results_path, index_col=0).T.to_dict()
+    else:
+        results = {}
 
-    os.makedirs(res_dir, exist_ok=True)
-    os.makedirs(data_dir, exist_ok=True)
-    os.makedirs(model_dir, exist_ok=True)
+    selected_model = train_test_dict['params']['model_params']['model_type'][:3].upper() #9
 
-    out_name = f"{path_params['type']}_{subset}_nan{int(nan_percentage * 10)}_nf{num_fut}"
-    results_path = os.path.join(res_dir, f"{out_name}.csv")
-    pickle_path = os.path.join(data_dir, f"{out_name}.pickle")
-    checkpoint_path = os.path.join(model_dir, f"{out_name}")
-
-    results = {}
-
-    train_test_dict = data_step(path_params, prep_params, eval_params, keep_nan=False)
-
-    with open(pickle_path, "wb") as f:
-        train_test_dict['params'] = {
-            'path_params': path_params,
-            'prep_params': prep_params,
-            'eval_params': eval_params,
-            'model_params': model_params,
-        }
-        pickle.dump(train_test_dict, f)
-
-    selected_model = train_test_dict['params']['model_params']['model_type'][:3].upper()
     ablations_mapping = {
         selected_model: no_ablation,
     }
@@ -212,6 +197,13 @@ def ablation(
     if ablation_extra:
         ablations_mapping.update(ablation_extra)
 
+    ablations_mapping = {
+        selected_model: no_ablation,
+        'S': ablation_encoder_s,
+        'TS': ablation_encoder_ts,
+        'NO_GLB': ablation_no_global_encoder
+    }
+
     for name, func in ablations_mapping.items():
         # Load data
         with open(pickle_path, "rb") as f:
@@ -231,21 +223,49 @@ def ablation(
 
 
 def main():
+    path_params, prep_params, eval_params, model_params = parse_params()
+    # path_params = change_params(path_params, '../../data', '../../Dataset/AdbPo')
+    if 'seed' not in model_params:
+        model_params['seed'] = 42
+    if model_params['seed'] is not None:
+        _seed = model_params['seed']
+        random.seed(_seed)
+        np.random.seed(_seed)
+        tf.random.set_seed(_seed)
+
     res_dir = './output/results'
     data_dir = './output/pickle'
     model_dir = './output/model'
 
-    path_params, prep_params, eval_params, model_params = parse_params()
-    # path_params = change_params(path_params, '../../data', '../../Dataset/AdbPo')
+    subset = os.path.basename(path_params['ex_filename']).replace('subset_agg_', '').replace('.csv', '')
+    nan_percentage = path_params['nan_percentage']
+    num_fut = prep_params['ts_params']['num_fut']
+
+    os.makedirs(res_dir, exist_ok=True)
+    os.makedirs(data_dir, exist_ok=True)
+    os.makedirs(model_dir, exist_ok=True)
+
+    out_name = f"{path_params['type']}_{subset}_nan{int(nan_percentage * 10)}_nf{num_fut}"
+    results_path = os.path.join(res_dir, f"{out_name}.csv")
+    pickle_path = os.path.join(data_dir, f"{out_name}.pickle")
+    checkpoint_path = os.path.join(model_dir, f"{out_name}")
+
+    train_test_dict = data_step(path_params, prep_params, eval_params, keep_nan=False)
+
+    train_test_dict['params'] = {
+        'path_params': path_params,
+        'prep_params': prep_params,
+        'eval_params': eval_params,
+        'model_params': model_params,
+    }
+    with open(pickle_path, "wb") as f:
+        pickle.dump(train_test_dict, f)
 
     ablation(
-        path_params=path_params,
-        prep_params=prep_params,
-        eval_params=eval_params,
-        model_params=model_params,
-        res_dir=res_dir,
-        data_dir=data_dir,
-        model_dir=model_dir,
+        train_test_dict=deepcopy(train_test_dict),
+        results_path=results_path,
+        pickle_path=pickle_path,
+        checkpoint_path=checkpoint_path,
         ablation_embedder=True,
         ablation_encoder=True,
         ablation_extra={

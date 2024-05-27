@@ -195,6 +195,19 @@ class SpatialEmbedding(tf.keras.layers.Layer):
         return embedded_inputs
 
 
+class SpatialEmbedding2(tf.keras.layers.Layer):
+    def __init__(self, temp_encoder):
+        super().__init__()
+        self.temp_encoder = temp_encoder
+
+    def call(self, inputs, **kwargs):
+        embedded_inputs = tf.concat([
+            self.temp_encoder(x) for x in inputs
+        ], axis=1)
+
+        return embedded_inputs
+
+
 def main():
     # Temporal input with value, time, and null dimensions
     data = np.random.randn(100, 24, 5).astype(np.float32)

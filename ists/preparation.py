@@ -108,8 +108,8 @@ def find_nearest_label(ts_label: pd.Series) -> Tuple[np.ndarray, np.ndarray]:
     label_isnull = ts_label.isnull().values
     distance_fw = null_distance_array(label_isnull, method='lin', max_dist=None)
     distance_bw = null_distance_array(label_isnull[::-1], method='lin', max_dist=None)[::-1]
-    label_fw = ts_label.fillna(method='ffill').values
-    label_bw = ts_label.fillna(method='bfill').values
+    label_fw = ts_label.ffill().values #.fillna(method='ffill').values
+    label_bw = ts_label.bfill().values #.fillna(method='bfill').values
     min_distance = np.where(distance_fw < distance_bw, distance_fw, distance_bw)
     nearest_label = np.where(distance_fw < distance_bw, label_fw, label_bw)
 
@@ -263,7 +263,7 @@ def prepare_data(
         # Forward fill null values
         ts_new['__LABEL__'] = ts_new[label_col]
         if with_fill:
-            ts_new[features + new_features] = ts_new[features + new_features].fillna(method='ffill')
+            ts_new[features + new_features] = ts_new[features + new_features].ffill() #.fillna(method='ffill')
         # Sliding window step
         blob = sliding_window(ts_new, '__LABEL__', features + new_features, num_past, num_fut)
         if blob is None:
@@ -329,7 +329,7 @@ def prepare_train_test(
         dist_y_array: np.ndarray,
         id_array: np.ndarray,
         spt_array: List[np.ndarray],
-        exg_array: np.ndarray,
+        exg_array: List[np.ndarray],
         test_start: str,
 ) -> dict:
     is_train = time_array[:, -1] < pd.to_datetime(test_start).date()
@@ -342,7 +342,8 @@ def prepare_train_test(
         'dist_y_train': dist_y_array[is_train],
         'id_train': id_array[is_train],
         'spt_train': [arr[is_train] for arr in spt_array],
-        'exg_train': exg_array[is_train],
+        'exg_train': [arr[is_train] for arr in exg_array],
+        # 'exg_train': exg_array[is_train],
         'x_test': x_array[is_test],
         'y_test': y_array[is_test],
         'time_test': time_array[is_test],
@@ -350,6 +351,7 @@ def prepare_train_test(
         'dist_y_test': dist_y_array[is_test],
         'id_test': id_array[is_test],
         'spt_test': [arr[is_test] for arr in spt_array],
-        'exg_test': exg_array[is_test],
+        'exg_test': [arr[is_test] for arr in exg_array],
+        # 'exg_test': exg_array[is_test],
     }
     return res

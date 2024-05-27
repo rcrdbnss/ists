@@ -1,10 +1,11 @@
-from typing import Dict, List, Tuple, Literal
 from datetime import datetime
+from typing import Dict, List, Tuple, Literal
 
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
+from .preparation import drop_first_nan_rows, null_indicator
 from .preprocessing import time_encoding
 
 
@@ -47,7 +48,7 @@ def prepare_spatial_data(
         spt_count = 0
         spt_mem = []
         for spt_id in spt_ids:
-            if rtime in arr_mapping[spt_id].index and arr_mapping[spt_id].loc[rtime, 'Null'] <= max_null_th :
+            if rtime in arr_mapping[spt_id].index and arr_mapping[spt_id].loc[rtime, 'Null'] <= max_null_th:
                 spt_count += 1
                 spt_mem.append(arr_mapping[spt_id].loc[rtime, 'Idx'])
 
@@ -76,7 +77,7 @@ def find_last_date_idx(df: pd.DataFrame, date: datetime.date, th: int = 7) -> in
     last_date = df_slice.index[-1]
     last_date_idx = df.index.get_loc(last_date)
 
-    if (date - last_date ).days > th:
+    if (date - last_date).days > th:
         return -1
     else:
         return last_date_idx
@@ -88,32 +89,51 @@ def prepare_exogenous_data(
         exg_dict: Dict[str, pd.DataFrame],
         num_past: int,
         features: List[str],
-        time_feats: List[str]
-) -> Tuple[np.ndarray, np.ndarray]:
-    exg_array = []
-    mask = []
+        time_feats: List[str],
+        null_feat: Literal['code_bool', 'code_lin', 'bool', 'log', 'lin'], # = None,
+        null_max_dist: int, # = None,
+) -> Tuple[List[np.ndarray], np.ndarray]:
 
-    for k, df in exg_dict.items():
-        df = time_encoding(df, codes=time_feats)
-        df = df[features + time_feats]
-        exg_dict[k] = df
+    exg_dict_feats = dict()
+    for f in features:
+        exg_dict_feats[f] = dict()
+        for k, df in exg_dict.items():
+            exg_dict_feats[f][k] = df[[f]].copy()
 
+    for f, _exg_dict in exg_dict_feats.items():
+        for k, ts in _exg_dict.items():
+            ts = drop_first_nan_rows(ts, [f], reverse=False)
+            ts = drop_first_nan_rows(ts, [f], reverse=True)
+            ts['NullFeat'] = null_indicator(ts, method=null_feat, max_dist=null_max_dist)
+            ts = time_encoding(ts, codes=time_feats)
+            ts = ts[[f, 'NullFeat'] + time_feats].ffill()
+            _exg_dict[k] = ts
+
+    exg_array_feats, mask = [[] for _ in features], []
     for rid, rtime in tqdm(zip(id_array, time_array)):
-        df: pd.DataFrame = exg_dict[rid]
-        # df = time_encoding(df, codes=time_feats)
-        # df = df[features + time_feats]
+        exg_dict_feats_t, mask_t = [], []
+        for f, _exg_dict in exg_dict_feats.items():
+            df: pd.DataFrame = _exg_dict[rid]
 
-        right = find_last_date_idx(df, date=rtime)
-        if right != -1:  # [features]
-            right = right + 1
-            left = right - num_past
-            if left >= 0:
-                mask.append(True)
-                exg_array.append(df.iloc[left:right].values)
+            right = find_last_date_idx(df, date=rtime)
+            if right != -1:
+                right = right + 1
+                left = right - num_past
+                if left >= 0:
+                    mask_t.append(True)
+                    exg_dict_feats_t.append(df.iloc[left:right].values)
+                else:
+                    mask_t.append(False)
+                    # exg_dict_feats_t.append(None)
             else:
-                mask.append(False)
-        else:
-            mask.append(False)
+                mask_t.append(False)
+                # exg_dict_feats_t.append(None)
+        mask_t = np.all(mask_t)
+        if mask_t:
+            for i in range(len(features)):
+                exg_array_feats[i].append(exg_dict_feats_t[i])
+        mask.append(mask_t)
 
-    exg_array = np.array(exg_array, dtype=float)
-    return exg_array, np.array(mask)
+    mask = np.array(mask)
+    exg_array_feats = [np.array(arr, dtype=float) for arr in exg_array_feats]
+    return exg_array_feats, mask

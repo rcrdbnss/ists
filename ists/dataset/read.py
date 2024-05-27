@@ -15,8 +15,8 @@ def load_data(
         nan_percentage: float = 0,
 ) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], Dict[str, pd.Series]]:
     # Set a fixed seed for reproducibility
-    fixed_seed = 42
-    np.random.seed(fixed_seed)
+    # fixed_seed = 42
+    # np.random.seed(fixed_seed)
 
     if data_type == 'adbpo':
         return load_piezo_data(

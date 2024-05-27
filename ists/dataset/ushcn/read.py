@@ -76,7 +76,9 @@ def load_ushcn_data(
 
     # Create a copy of exogenous series from the raw time-series dict
     exg_dict = {
-        k: df[["SNOW", "SNWD", "PRCP", "TMAX", "TMIN"]].fillna(method='ffill').dropna(axis=0, how='any')
+        k: df[["SNOW", "SNWD", "PRCP", "TMAX", "TMIN"]]
+        # .fillna(method='ffill').dropna(axis=0, how='any')
+        .copy()
         for k, df in ts_dict.items()
     }
 

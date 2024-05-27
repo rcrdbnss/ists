@@ -1,6 +1,11 @@
 import os
 import json
 import pickle
+import random
+
+import numpy as np
+import pandas as pd
+import tensorflow as tf
 import argparse
 
 from ists.dataset.read import load_data
@@ -116,7 +121,9 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, keep_nan:
         exg_dict=exg_dict,
         num_past=exg_params['num_past'],
         features=exg_params['features'],
-        time_feats=exg_params['time_feats']
+        time_feats=exg_params['time_feats'],
+        null_feat=feat_params['null_feat'],
+        null_max_dist=feat_params['null_max_dist'],
     )
     # Compute exogenous feature mask and time encoding max sizes
     exg_feature_mask = define_feature_mask(base_features=exg_params['features'], time_feats=exg_params['time_feats'])
@@ -187,6 +194,7 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
         transform_type=transform_type,
         loss=loss,
         lr=lr,
+        # **{k: model_params[k] for k in ['do_exg', 'do_spt', 'do_glb', 'do_target'] if k in model_params}
     )
 
     model.fit(
@@ -198,12 +206,6 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
         batch_size=batch_size,
         validation_split=0.1,
         verbose=1,
-        extra={
-            'x': train_test_dict['x_test'],
-            'spt': train_test_dict['spt_test'],
-            'exg': train_test_dict['exg_test'],
-            'y': train_test_dict['y_test']
-        }
     )
 
     preds = model.predict(
@@ -235,24 +237,54 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
 def main():
     path_params, prep_params, eval_params, model_params = parse_params()
     # path_params = change_params(path_params, '../../data', '../../Dataset/AdbPo')
+    if 'seed' not in model_params:
+        model_params['seed'] = 42
+    if model_params['seed'] is not None:
+        _seed = model_params['seed']
+        random.seed(_seed)
+        np.random.seed(_seed)
+        tf.random.set_seed(_seed)
+
+    res_dir = './output/results'
+    data_dir = './output/pickle'
+    model_dir = './output/model'
+
+    subset = os.path.basename(path_params['ex_filename']).replace('subset_agg_', '').replace('.csv', '')
+    nan_percentage = path_params['nan_percentage']
+    num_fut = prep_params['ts_params']['num_fut']
+
+    os.makedirs(res_dir, exist_ok=True)
+    os.makedirs(data_dir, exist_ok=True)
+    os.makedirs(model_dir, exist_ok=True)
+
+    out_name = f"{path_params['type']}_{subset}_nan{int(nan_percentage * 10)}_nf{num_fut}"
+    results_path = os.path.join(res_dir, f"{out_name}.csv")
+    pickle_path = os.path.join(data_dir, f"{out_name}.pickle")
+    checkpoint_path = os.path.join(model_dir, f"{out_name}")
 
     train_test_dict = data_step(path_params, prep_params, eval_params, keep_nan=False)
 
-    # with open(f"output/{path_params['type']}.pickle", "wb") as f:
-    #     pickle.dump(train_test_dict, f)
-    #     train_test_dict['params'] = {
-    #         'path_params': path_params,
-    #         'prep_params': prep_params,
-    #         'eval_params': eval_params,
-    #         'model_params': model_params,
-    #     }
+    train_test_dict['params'] = {
+        'path_params': path_params,
+        'prep_params': prep_params,
+        'eval_params': eval_params,
+        'model_params': model_params,
+    }
+    with open(pickle_path, "wb") as f:
+        pickle.dump(train_test_dict, f)
 
-    # with open(f"output/{path_params['type']}.pickle", "rb") as f:
-    #     train_test_dict = pickle.load(f)
+    if os.path.exists(results_path):
+        results = pd.read_csv(results_path, index_col=0).T.to_dict()
+    else:
+        results = {}
 
-    _ = model_step(train_test_dict, model_params, checkpoint_dir='./output')
+    selected_model = train_test_dict['params']['model_params']['model_type'][:3].upper()
 
-    print('Hello World!')
+    results[selected_model] = model_step(train_test_dict, train_test_dict['params']['model_params'], checkpoint_path)
+
+    pd.DataFrame(results).T.to_csv(results_path, index=True)
+
+    print('Done!')
 
 
 def main2():
