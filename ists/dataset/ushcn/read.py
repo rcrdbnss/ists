@@ -49,7 +49,7 @@ def extract_ushcn_context(filename: str, id_col: str, x_col: str, y_col: str) ->
 def load_ushcn_data(
         ts_filename: str,
         subset_filename: str = None,
-        nan_percentage: float = 0
+        nan_percentage: float = 0,
 ) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], Dict[str, pd.Series]]:
     # Read irregular ushcn time series
     ts_dict = read_ushcn(
@@ -75,10 +75,9 @@ def load_ushcn_data(
             ctx_dict.pop(k)
 
     # Create a copy of exogenous series from the raw time-series dict
+    exg_cols = ["SNOW", "SNWD", "PRCP", "TMIN"]
     exg_dict = {
-        k: df[["SNOW", "SNWD", "PRCP", "TMAX", "TMIN"]]
-        # .fillna(method='ffill').dropna(axis=0, how='any')
-        .copy()
+        k: df[exg_cols].copy()
         for k, df in ts_dict.items()
     }
 
@@ -96,6 +95,10 @@ def load_ushcn_data(
         ts_dict = {
             k: insert_null_values(ts, nan_percentage, cols=["TMAX"])
             for k, ts in ts_dict.items()
+        }
+        exg_dict = {
+            k: insert_null_values(exg, nan_percentage, cols=exg_cols)
+            for k, exg in exg_dict.items()
         }
 
     return ts_dict, exg_dict, spt_dict

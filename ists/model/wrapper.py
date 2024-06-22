@@ -6,8 +6,8 @@ import numpy as np
 import tensorflow as tf
 
 from .ablation import TSWithExogenousFeatures, STTWithSpatialExogenous, SEWithSpatialExogenous
-from .ablation import TransformerSpatial, TransformerTemporal, TransformerExogenous, TransformerTemporalSpatial, \
-    TransformerSpatialExogenous, TransformerTemporalExogenous, STTnoEmbedding
+from .ablation import TransformerTemporal, TransformerExogenous, TransformerSpatialExogenous, \
+    TransformerTemporalExogenous, STTnoEmbedding
 from .model import STTransformer, BaselineModel
 from ..metrics import compute_metrics
 from ..preprocessing import StandardScalerBatch, MinMaxScalerBatch
@@ -27,10 +27,22 @@ def get_transformer(transform_type: str) -> object:
         raise ValueError('Transformer {} is not supported, it must be "standard" or "minmax"')
 
 
+def set_abl_params(model_params, do_exg=True, do_spt=True, do_glb=True) -> dict:
+    model_params['do_exg'] = do_exg
+    model_params['do_spt'] = do_spt
+    model_params['do_glb'] = do_glb
+    # add target series
+    # model_params['exg_size'] += 1
+    # model_params['spatial_size'] += 1
+    return model_params
+
+
 def get_model(model_type: str, model_params) -> T:
     # Return the selected model
     if model_type == 'sttransformer':
+        # return STTransformer(**set_abl_params(model_params))
         return STTransformer(**model_params)
+
     elif model_type == 'stt_no_embd':
         return STTnoEmbedding(**model_params)
     elif model_type == 'dense':
@@ -51,17 +63,11 @@ def get_model(model_type: str, model_params) -> T:
     elif model_type == 't':
         return TransformerTemporal(**model_params)
     elif model_type == 's':
-        model_params['do_exg'] = False
-        model_params['do_spt'] = True
-        model_params['do_target'] = False
-        return STTransformer(**model_params)
-        # return TransformerSpatial(**model_params)
+        return STTransformer(**set_abl_params(model_params, False, True, False))
     elif model_type == 'e':
         return TransformerExogenous(**model_params)
     elif model_type == 'ts':
-        model_params['do_exg'], model_params['do_spt'], model_params['do_target'] = False, True, True
-        return STTransformer(**model_params)
-        # return TransformerTemporalSpatial(**model_params)
+        return STTransformer(**set_abl_params(model_params, False, True, True))
     elif model_type == 'te':
         return TransformerTemporalExogenous(**model_params)
     elif model_type == 'se':
@@ -72,9 +78,24 @@ def get_model(model_type: str, model_params) -> T:
         return STTWithSpatialExogenous(**model_params)
     elif model_type == 'se_se':
         return SEWithSpatialExogenous(**model_params)
+
     elif model_type == 'no_glb':
-        model_params['do_glb'] = False
-        return STTransformer(**model_params)
+        return STTransformer(**set_abl_params(model_params, True, True, False))
+    elif model_type == 'stt_mv':
+        # model_params['univar_or_multivar'] = 'multivar'
+        return STTransformer(**set_abl_params(model_params, True, True, True))
+    elif model_type == 'mv_te':
+        # model_params['univar_or_multivar'] = 'multivar'
+        return STTransformer(**set_abl_params(model_params, True, False, True))
+    elif model_type == 'mv_ts':
+        # model_params['univar_or_multivar'] = 'multivar'
+        return STTransformer(**set_abl_params(model_params, False, True, True))
+    elif model_type == 'mv_no_glb':
+        # model_params['univar_or_multivar'] = 'multivar'
+        return STTransformer(**set_abl_params(model_params, True, True, False))
+    elif model_type == 'mv_ts_no_glb':
+        # model_params['univar_or_multivar'] = 'multivar'
+        return STTransformer(**set_abl_params(model_params, False, True, False))
     else:
         raise ValueError('Model {} is not supported, it must be "sttransformer"')
 
@@ -182,15 +203,11 @@ class ModelWrapper(object):
             loss: str = 'mse',
             lr: float = 0.001,
             best_valid: bool = True,
-            # do_exg=True, do_spt=True, do_glb=True, do_target=True
+            dev = False
     ):
-        # model_params['do_exg'] = do_exg
-        # model_params['do_spt'] = do_spt
-        # model_params['do_glb'] = do_glb
-        # model_params['do_target'] = do_target
-        for k in ['do_exg', 'do_spt', 'do_glb', 'do_target']:
-            model_params[k] = True
+        # model_params['do_emb'] = False
         self.model = get_model(model_type, model_params)
+        # self.model = STTransformer(**model_params)
 
         self.transform_type = transform_type  # transformer = scaler
         if transform_type:
@@ -223,6 +240,20 @@ class ModelWrapper(object):
         # Create checkpoint directory
         if not os.path.isdir(self.checkpoint_dir):
             os.makedirs(self.checkpoint_dir, exist_ok=True)
+
+        if self.lr > 0:
+            optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr)
+        else:
+            learning_rate = CustomSchedule(self.d_model)
+            optimizer = tf.keras.optimizers.Adam(learning_rate, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
+
+        self.model.compile(
+            loss=self.loss,
+            optimizer=optimizer,
+            metrics=['mae', 'mse'],
+            run_eagerly=dev,
+            # run_eagerly=False,
+        )
 
     def _fit_transform(self, spt: List[np.ndarray], exg: List[np.ndarray]):
         if self.transform_type:
@@ -273,6 +304,8 @@ class ModelWrapper(object):
 
     @staticmethod
     def _get_spatial_array(x: np.ndarray, spt: List[np.ndarray]) -> List[np.ndarray]:
+        if len(spt) == 0:
+            return [x]
         spt_num_past = spt[0].shape[1]
         spt_x = [np.copy(x[:, -spt_num_past:, :])] + spt
         return spt_x
@@ -289,9 +322,8 @@ class ModelWrapper(object):
             validation_split: float = 0.1,
             verbose: int = 0,
     ):
-        # todo: do_target = False
-        spt = self._get_spatial_array(x, spt) # if self.do_spt else [x]
-        exg = self._get_spatial_array(x, exg) # if self.do_exg else [np.random.random(x.shape)]
+        spt = self._get_spatial_array(x, spt)
+        exg = self._get_spatial_array(x, exg)
         spt, exg = self._fit_transform(spt, exg)
         # if not self.do_exg:
         #     exg = [exg[0][:, 0:0]]
@@ -305,18 +337,6 @@ class ModelWrapper(object):
             mode='min',
             verbose=1,
             # save_format='tf'
-        )
-        if self.lr > 0:
-            optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr)  # , clipnorm=1.0, clipvalue=0.5)
-        else:
-            learning_rate = CustomSchedule(self.d_model)
-            optimizer = tf.keras.optimizers.Adam(learning_rate, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
-
-        self.model.compile(
-            loss=self.loss,
-            optimizer=optimizer,
-            metrics=['mae', 'mse'],
-            run_eagerly=True,
         )
 
         self.history = self.model.fit(

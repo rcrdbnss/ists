@@ -1,9 +1,36 @@
-from typing import List
+from typing import List, Literal
 
 import tensorflow as tf
 
-from .embedding import TemporalEmbedding, SpatialEmbedding2
-from .encoder import GlobalEncoderLayer
+from .embedding import TemporalEmbedding, SpatialEmbedding2, SpatialEmbeddingAsMultiVariate
+from .encoder import GlobalEncoderLayer, SpatialExogenousEncoder
+
+
+def spatial_embedding(feature_mask):
+    def init(d_model, kernel_size, with_cnn=True, time_max_sizes=None, null_max_size=None):
+        return SpatialEmbedding2(TemporalEmbedding(
+            d_model=d_model,
+            kernel_size=kernel_size,
+            feature_mask=feature_mask,
+            with_cnn=with_cnn,
+            time_max_sizes=time_max_sizes,
+            null_max_size=null_max_size
+        ))
+    return init
+
+
+def spatial_embedding_as_multivariate(feature_mask, n_univars):
+    def init(d_model, kernel_size, with_cnn=True, time_max_sizes=None, null_max_size=None):
+        return SpatialEmbeddingAsMultiVariate(
+            d_model=d_model,
+            kernel_size=kernel_size,
+            n_univars=n_univars,
+            feature_mask_univar=feature_mask,
+            with_cnn=with_cnn,
+            time_max_sizes=time_max_sizes,
+            null_max_size=null_max_size
+        )
+    return init
 
 
 class STTransformer(tf.keras.Model):
@@ -28,36 +55,77 @@ class STTransformer(tf.keras.Model):
             null_max_size=None,
             time_max_sizes=None,
             exg_time_max_sizes=None,
-            do_exg=True, do_spt=True, do_glb=True, do_target=True
+            do_exg=True, do_spt=True, do_glb=True, do_emb=True, force_target=False,
+            exg_size=None,
+            # univar_or_multivar : Literal['univar', 'multivar'] = 'univar',
+            multivar = False,
+            encoder_cls=GlobalEncoderLayer
     ):
         super().__init__()
         self.do_exg, self.do_spt = do_exg, do_spt
-        self.do_target = do_target
+        self.force_target = force_target
 
-        self.exogenous_embedder = SpatialEmbedding2(
-            TemporalEmbedding(
-                d_model=d_model,
-                kernel_size=kernel_size,
-                feature_mask=feature_mask,
-                with_cnn=exg_cnn,
-                null_max_size=null_max_size,
-                time_max_sizes=exg_time_max_sizes,
-            )
-        ) if self.do_exg else lambda x: None
+        # if univar_or_multivar == 'univar':
+        if multivar:
+            ExogenousEmbedding = spatial_embedding_as_multivariate(feature_mask, exg_size)
+            SpatialEmbedding = spatial_embedding_as_multivariate(feature_mask, spatial_size)
+        # elif univar_or_multivar == 'multivar':
+        else:
+            ExogenousEmbedding = spatial_embedding(feature_mask)
+            SpatialEmbedding = spatial_embedding(feature_mask)
 
-        self.spatial_embedder = SpatialEmbedding2(
-            TemporalEmbedding(
-                d_model=d_model,
-                kernel_size=kernel_size,
-                feature_mask=feature_mask,
-                with_cnn=spt_cnn,
-                null_max_size=null_max_size,
-                time_max_sizes=time_max_sizes,
-            )
-        ) if self.do_spt else lambda x: None
-
-        self.encoder = GlobalEncoderLayer(
+        self.exogenous_embedder = ExogenousEmbedding(
             d_model=d_model,
+            kernel_size=kernel_size,
+            with_cnn=exg_cnn,
+            null_max_size=null_max_size,
+            time_max_sizes=exg_time_max_sizes,
+        ) if self.do_exg or force_target else lambda x: None
+        if not do_emb:
+            del self.exogenous_embedder
+            self.exogenous_embedder = lambda x: tf.concat(x, axis=1)
+
+        self.spatial_embedder = SpatialEmbedding(
+            d_model=d_model,
+            kernel_size=kernel_size,
+            with_cnn=spt_cnn,
+            null_max_size=null_max_size,
+            time_max_sizes=time_max_sizes,
+        ) if self.do_spt or force_target else lambda x: None
+        if not do_emb:
+            del self.spatial_embedder
+            self.spatial_embedder = lambda x: tf.concat(x, axis=1)
+
+        if force_target and not do_exg and not do_spt:
+            # leave only spatial branch on
+            del self.exogenous_embedder
+            self.exogenous_embedder = lambda x: None
+
+        # # todo: rewrite better
+        # if encoder_cls == SpatialExogenousEncoder:
+        #     del self.exogenous_embedder
+        #     del self.spatial_embedder
+        #     self.__exg_emb = TemporalEmbedding(
+        #         d_model=d_model,
+        #         kernel_size=kernel_size,
+        #         feature_mask=feature_mask,
+        #         with_cnn=exg_cnn,
+        #         time_max_sizes=time_max_sizes,
+        #         null_max_size=null_max_size
+        #     )
+        #     self.__spt_emb = TemporalEmbedding(
+        #         d_model=d_model,
+        #         kernel_size=kernel_size,
+        #         feature_mask=feature_mask,
+        #         with_cnn=spt_cnn,
+        #         time_max_sizes=time_max_sizes,
+        #         null_max_size=null_max_size
+        #     )
+        #     self.exogenous_embedder = lambda inputs: [self.__exg_emb(x) for x in inputs]
+        #     self.spatial_embedder = lambda inputs: [self.__spt_emb(x) for x in inputs]
+
+        self.encoder = encoder_cls(
+            d_model=(d_model if do_emb else len(feature_mask)),
             num_heads=num_heads,
             dff=dff,
             activation=activation,
@@ -72,25 +140,16 @@ class STTransformer(tf.keras.Model):
         self.last_attn_scores = None
 
     def call(self, inputs, **kwargs):
-        exg_arr, spt_arr = inputs
-        if (self.do_exg, self.do_spt, self.do_target) == (False, True, False):
-            exg_arr = []
-            spt_arr = spt_arr[1:]
-        elif (self.do_exg, self.do_spt, self.do_target) == (False, True, True):
-            exg_arr = []
-        elif (self.do_exg, self.do_spt, self.do_target) == (True, False, False):
-            exg_arr = exg_arr[1:]
-            spt_arr = []
-        elif (self.do_exg, self.do_spt, self.do_target) == (True, False, True):
-            spt_arr = []
-        elif (self.do_exg, self.do_spt, self.do_target) == (True, True, False):
-            exg_arr = exg_arr[1:]
-            spt_arr = spt_arr[1:]
+        exg_x, spt_x = inputs
+        if self.force_target and self.do_spt and not self.do_exg:
+            exg_x = exg_x[0:1]
+        if self.force_target and not self.do_spt:
+            spt_x = spt_x[0:1]
 
-        exg_x = self.exogenous_embedder(exg_arr)
-        spt_x = self.spatial_embedder(spt_arr)
-        exogenous_emb, spatial_emb = self.encoder((exg_x, spt_x))
-        embedded_x = tf.concat([exogenous_emb, spatial_emb], axis=1)
+        exg_x = self.exogenous_embedder(exg_x)
+        spt_x = self.spatial_embedder(spt_x)
+        exg_x, spt_x = self.encoder((exg_x, spt_x))
+        embedded_x = tf.concat([exg_x, spt_x], axis=1)
 
         embedded_x = self.flatten(embedded_x)
         embedded_x = self.dense(embedded_x)

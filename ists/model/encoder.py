@@ -47,6 +47,7 @@ class GlobalSelfAttention(BaseAttention):
 
         x = self.add([x, attn_output])
         x = self.layernorm(x)
+
         return x
 
 
@@ -123,10 +124,65 @@ class CrossEncoderLayer(tf.keras.layers.Layer):
         return x
 
 
+class ContextualEncoderLayer(tf.keras.layers.Layer):
+
+    def __init__(self, *, d_model, num_heads, dff, activation='relu', dropout_rate=0.1):
+        super().__init__()
+        self.ctx_encoder = EncoderLayer(
+            d_model=d_model,
+            num_heads=num_heads,
+            dff=dff,
+            dropout_rate=dropout_rate,
+            activation=activation,
+        )
+
+        self.cross_encoder = CrossEncoderLayer(
+            d_model=d_model,
+            num_heads=num_heads,
+            dff=dff,
+            dropout_rate=dropout_rate,
+            activation=activation,
+        )
+
+    def call(self, x, context):
+        context = self.ctx_encoder(x=context)
+        x = self.cross_encoder(x=x, context=context)
+        return x, context
+
+
+class SpatialExogenousEncoder(tf.keras.layers.Layer):
+
+    def __init__(self, *, d_model, num_heads, dff, activation='relu', num_layers=1, dropout_rate=0.1, **kwargs):
+        super().__init__()
+        self.num_layers = num_layers
+        self.exg_encs = [ContextualEncoderLayer(
+            d_model=d_model, num_heads=num_heads, dff=dff, activation=activation, dropout_rate=dropout_rate
+        ) for _ in range(num_layers)]
+        self.spt_encs = [ContextualEncoderLayer(
+            d_model=d_model, num_heads=num_heads, dff=dff, activation=activation, dropout_rate=dropout_rate
+        ) for _ in range(num_layers)]
+        self.glb_encs = [EncoderLayer(
+            d_model=d_model, num_heads=num_heads, dff=dff, activation=activation, dropout_rate=dropout_rate
+        ) for _ in range(num_layers)]
+
+    def call(self, __inputs):
+        exg_inputs, spt_inputs = __inputs
+        exg_x, exg_ctx = exg_inputs[0], exg_inputs
+        spt_x, spt_ctx = spt_inputs[0], spt_inputs
+        exg_ctx, spt_ctx = tf.concat(exg_ctx, axis=1), tf.concat(spt_ctx, axis=1)
+        for i in range(self.num_layers):
+            exg_x, exg_ctx = self.exg_encs[i](exg_x, exg_ctx)
+            spt_x, spt_ctx = self.spt_encs[i](spt_x, spt_ctx)
+            x = tf.concat([exg_x, spt_x], axis=1)
+            x = self.glb_encs[i](x)
+            exg_x, spt_x = tf.split(x, [exg_x.shape[1], spt_x.shape[1]], axis=1)
+        return exg_x, spt_x
+
+
 class GlobalEncoderLayer(tf.keras.layers.Layer):
 
     def __init__(self, *, d_model, num_heads, dff, activation='relu', num_layers=1, dropout_rate=0.1,
-                 do_exg=False, do_spt=True, do_glb=True,
+                 do_exg=False, do_spt=True, do_glb=True, force_target=True,
                  ):
         super(GlobalEncoderLayer, self).__init__()
 
@@ -142,7 +198,7 @@ class GlobalEncoderLayer(tf.keras.layers.Layer):
                 activation=activation,
             )
             for _ in range(self.num_layers)
-        ] if do_spt else [lambda x: x for _ in range(self.num_layers)]
+        ] if do_spt or force_target else [lambda x: x for _ in range(self.num_layers)]
 
         self.exogenous_encoders = [
             EncoderLayer(
@@ -153,7 +209,10 @@ class GlobalEncoderLayer(tf.keras.layers.Layer):
                 activation=activation,
             )
             for _ in range(self.num_layers)
-        ] if do_exg else [lambda x: x for _ in range(self.num_layers)]
+        ] if do_exg or force_target else [lambda x: x for _ in range(self.num_layers)]
+
+        if force_target and not do_exg and not do_spt:
+            self.exogenous_encoders = [lambda x: x for _ in range(self.num_layers)]
 
         self.global_encoders = [
             EncoderLayer(
@@ -172,12 +231,11 @@ class GlobalEncoderLayer(tf.keras.layers.Layer):
         exg_x, spt_x = x
 
         if exg_x is None:
-            _shape = spt_x.shape
-            exg_x = np.random.random((_shape[0], 0, _shape[2]))
+            _shape = tf.shape(spt_x)
+            exg_x = tf.random.uniform(_shape)[:, 0:0, :]
         if spt_x is None:
-            _shape = exg_x.shape
-            spt_x = np.random.random((_shape[0], 0, _shape[2]))
-
+            _shape = tf.shape(exg_x)
+            spt_x = tf.random.uniform(_shape)[:, 0:0, :]
         for i in range(self.num_layers):
             exg_x = self.exogenous_encoders[i](exg_x)
             spt_x = self.spatial_encoders[i](spt_x)

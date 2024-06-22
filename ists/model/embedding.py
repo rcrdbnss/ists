@@ -142,8 +142,8 @@ class TemporalEmbedding(tf.keras.layers.Layer):
         self.time_ids = [i for i, x in enumerate(feature_mask) if x == 2]
 
     def call(self, x, **kwargs):
-        if x.shape[2] != len(self.feature_mask):
-            raise ValueError('Input data have a different features dimension that the provided feature mask')
+        # if tf.shape(x)[2] != len(self.feature_mask):
+        #     raise ValueError(f'Input data {tf.shape(x)} have a different features dimension that the provided feature mask ({len(self.feature_mask)})')
 
         # Extract value, null, and time array from the input matrix
         x_feat = tf.gather(x, self.feat_ids, axis=2)
@@ -164,8 +164,14 @@ class TemporalEmbedding(tf.keras.layers.Layer):
 
         # Add the null encoding
         if self.null_pos_encoding:
-            null_emb = self.null_pos_encoding(x[:, :, self.null_id[0]])
+            if len(self.null_id) == 1:
+                null_emb = self.null_pos_encoding(x[:, :, self.null_id[0]])
+            else:
+                null_emb = [self.null_pos_encoding(x[:, :, i]) for i in self.null_id]
+                # null_emb = tf.reduce_mean(null_emb, 0)
+                null_emb = tf.reduce_sum(null_emb, 0)
             x_feat = x_feat + null_emb
+
         return x_feat
 
 
@@ -206,6 +212,31 @@ class SpatialEmbedding2(tf.keras.layers.Layer):
         ], axis=1)
 
         return embedded_inputs
+
+
+class SpatialEmbeddingAsMultiVariate(tf.keras.layers.Layer):
+
+    def __init__(self, d_model, kernel_size, n_univars, feature_mask_univar, with_cnn=True, time_max_sizes=None, null_max_size=None):
+        super().__init__()
+        self.n_univars = n_univars
+        feature_mask_univar = np.array(feature_mask_univar)
+        self.arg_time = feature_mask_univar == 2
+        feature_mask = np.concatenate([*[feature_mask_univar[~self.arg_time] for _ in range(n_univars)], [2]])
+        self.embedder = TemporalEmbedding(
+            d_model=d_model,
+            kernel_size=kernel_size,
+            feature_mask=feature_mask,
+            with_cnn=with_cnn,
+            time_max_sizes=time_max_sizes,
+            null_max_size=null_max_size
+        )
+
+    def call(self, __inputs):
+        time_feat = tf.boolean_mask(__inputs[0], self.arg_time, axis=2)
+        mv_x = [*[tf.boolean_mask(x, ~self.arg_time, axis=2) for x in __inputs], time_feat]
+        mv_x = tf.concat(mv_x, axis=-1)
+        emb_x = self.embedder(mv_x)
+        return emb_x
 
 
 def main():

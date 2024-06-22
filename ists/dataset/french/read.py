@@ -23,10 +23,15 @@ def load_frenchpiezo_data(
         ts_filename: str,
         context_filename: str,
         subset_filename: str = None,
-        nan_percentage: float = 0
+        nan_percentage: float = 0,
 ) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], Dict[str, pd.Series]]:
     # Read irregular french piezo time series
-    ts_dict = read_french(ts_filename, id_col='bss', date_col='time', cols=['tp', 'e', 'p'])
+    ts_dict = read_french(
+        filename=ts_filename,
+        id_col='bss',
+        date_col='time',
+        cols=['tp', 'e', 'p'],
+    )
 
     # Filter based on a subset if any
     if subset_filename:
@@ -44,8 +49,10 @@ def load_frenchpiezo_data(
             ctx_dict.pop(k)
 
     # Create a copy of exogenous series from the raw time-series dict
+    exg_cols = ["tp", "e"]
     exg_dict = {
-        k: df[["tp", "e"]].fillna(method='ffill').dropna(axis=0, how='any')
+        k: df[exg_cols].copy()
+        # k: df[exg_cols].fillna(method='ffill').dropna(axis=0, how='any')
         for k, df in ts_dict.items()
     }
 
@@ -63,6 +70,10 @@ def load_frenchpiezo_data(
         ts_dict = {
             k: insert_null_values(ts, nan_percentage, cols=['p'])
             for k, ts in ts_dict.items()
+        }
+        exg_dict = {
+            k: insert_null_values(exg, nan_percentage, cols=exg_cols)
+            for k, exg in exg_dict.items()
         }
 
     return ts_dict, exg_dict, spt_dict
