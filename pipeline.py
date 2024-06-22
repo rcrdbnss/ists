@@ -9,6 +9,7 @@ import tensorflow as tf
 import argparse
 
 from ists.dataset.read import load_data
+from ists.model.encoder import SpatialExogenousEncoder
 from ists.preparation import prepare_data, prepare_train_test, filter_data
 from ists.preparation import define_feature_mask, get_list_null_max_size
 from ists.preprocessing import get_time_max_sizes
@@ -23,12 +24,36 @@ def parse_params():
     parser = argparse.ArgumentParser()
     parser.add_argument('-f', '--file', type=str, required=True,
                         help='the path where the configuration is stored.')
+    parser.add_argument('--dev', action='store_true', help='Run on development data')
+    parser.add_argument('--num-fut', type=int, default=0, help='Number of future values to predict')
+    parser.add_argument('--nan-percentage', type=float, default=-1., help='Percentage of NaN values to insert')
+    parser.add_argument('--seed', type=int, default=42, help='Random seed')
+
     args = parser.parse_args()
+    print(args)
     conf_file = args.file
     assert os.path.exists(conf_file), 'Configuration file does not exist'
 
     with open(conf_file, 'r') as f:
         conf = json.load(f)
+    conf['path_params']['dev'] = args.dev
+    conf['model_params']['seed'] = args.seed
+    if args.num_fut > 0:
+        conf['prep_params']['ts_params']['num_fut'] = args.num_fut
+    if args.nan_percentage >= 0:
+        conf['path_params']['nan_percentage'] = args.nan_percentage
+
+    if args.dev:
+        ts_name, ts_ext = os.path.splitext(conf['path_params']['ts_filename'])
+        conf['path_params']['ts_filename'] = f"{ts_name}_dev{ts_ext}"
+        ex_name, ex_ext = os.path.splitext(conf['path_params']['ex_filename'])
+        conf['path_params']['ex_filename'] = f"{ex_name}_dev{ex_ext}"
+        if conf['path_params']['ctx_filename']:
+            ctx_name, ctx_ext = os.path.splitext(conf['path_params']['ctx_filename'])
+            conf['path_params']['ctx_filename'] = f"{ctx_name}_dev{ctx_ext}"
+        conf['model_params']['epochs'] = 2
+        if conf['path_params']['type'] == 'french':
+            conf['eval_params']['test_start'] = '2017-07-01'
 
     return conf['path_params'], conf['prep_params'], conf['eval_params'], conf['model_params']
 
@@ -182,10 +207,13 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
     # Insert data params in nn_params for building the correct model
     nn_params['feature_mask'] = train_test_dict['x_feat_mask']
     nn_params['exg_feature_mask'] = train_test_dict['exg_feat_mask']
-    nn_params['spatial_size'] = len(train_test_dict['spt_train'])
+    nn_params['spatial_size'] = len(train_test_dict['spt_train']) + 1 # target
+    nn_params['exg_size'] = len(train_test_dict['exg_train']) + 1 # target
     nn_params['null_max_size'] = train_test_dict['null_max_size']
     nn_params['time_max_sizes'] = train_test_dict['time_max_sizes']
     nn_params['exg_time_max_sizes'] = train_test_dict['exg_time_max_sizes']
+    if 'encoder_cls' in model_params:
+        nn_params['encoder_cls'] = model_params['encoder_cls']
 
     model = ModelWrapper(
         checkpoint_dir=checkpoint_dir,
@@ -194,7 +222,7 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
         transform_type=transform_type,
         loss=loss,
         lr=lr,
-        # **{k: model_params[k] for k in ['do_exg', 'do_spt', 'do_glb', 'do_target'] if k in model_params}
+        dev=train_test_dict['params']['path_params']['dev']
     )
 
     model.fit(
@@ -237,17 +265,17 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
 def main():
     path_params, prep_params, eval_params, model_params = parse_params()
     # path_params = change_params(path_params, '../../data', '../../Dataset/AdbPo')
-    if 'seed' not in model_params:
-        model_params['seed'] = 42
-    if model_params['seed'] is not None:
-        _seed = model_params['seed']
+    # if 'seed' not in model_params:
+    #     model_params['seed'] = 42
+    _seed = model_params['seed']
+    if _seed is not None:
         random.seed(_seed)
         np.random.seed(_seed)
         tf.random.set_seed(_seed)
 
     res_dir = './output/results'
-    data_dir = './output/pickle'
-    model_dir = './output/model'
+    data_dir = './output/pickle' + ('_seed' + str(_seed) if _seed != 42 else '')
+    model_dir = './output/model' + ('_seed' + str(_seed) if _seed != 42 else '')
 
     subset = os.path.basename(path_params['ex_filename']).replace('subset_agg_', '').replace('.csv', '')
     nan_percentage = path_params['nan_percentage']
@@ -258,20 +286,26 @@ def main():
     os.makedirs(model_dir, exist_ok=True)
 
     out_name = f"{path_params['type']}_{subset}_nan{int(nan_percentage * 10)}_nf{num_fut}"
+    print('out_name:', out_name)
     results_path = os.path.join(res_dir, f"{out_name}.csv")
     pickle_path = os.path.join(data_dir, f"{out_name}.pickle")
     checkpoint_path = os.path.join(model_dir, f"{out_name}")
 
-    train_test_dict = data_step(path_params, prep_params, eval_params, keep_nan=False)
-
-    train_test_dict['params'] = {
-        'path_params': path_params,
-        'prep_params': prep_params,
-        'eval_params': eval_params,
-        'model_params': model_params,
-    }
-    with open(pickle_path, "wb") as f:
-        pickle.dump(train_test_dict, f)
+    if os.path.exists(pickle_path):
+        print('Loading from', pickle_path, '...', end='')
+        with open(pickle_path, "rb") as f:
+            train_test_dict = pickle.load(f)
+        print(' done!')
+    else:
+        train_test_dict = data_step(path_params, prep_params, eval_params, keep_nan=False)
+        train_test_dict['params'] = {
+            'path_params': path_params,
+            'prep_params': prep_params,
+            'eval_params': eval_params,
+            'model_params': model_params,
+        }
+        with open(pickle_path, "wb") as f:
+            pickle.dump(train_test_dict, f)
 
     if os.path.exists(results_path):
         results = pd.read_csv(results_path, index_col=0).T.to_dict()
@@ -347,4 +381,5 @@ def main2():
 
 
 if __name__ == '__main__':
+    # tf.config.set_visible_devices([], 'GPU')
     main()
