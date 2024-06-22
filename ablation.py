@@ -220,7 +220,7 @@ def apply_ablation_code(abl_code: str, train_test_dict):
         T = False  # no need to force the target series in anymore
 
     if M:
-        train_test_dict['params']['model_params']['multivar'] = True
+        train_test_dict['params']['model_params']['nn_params']['multivar'] = True
     if not n:
         train_test_dict = ablation_embedder_no_feat(train_test_dict, 1)
     if not t:
