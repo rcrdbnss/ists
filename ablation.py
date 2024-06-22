@@ -284,21 +284,21 @@ def ablation(
     # if ablation_extra:
     #     ablations_mapping.update(ablation_extra)
 
-    ablations_mapping = {
-        # selected_model: no_ablation,
-        # 'NO_GLB': ablation_no_global_encoder,
-        # 'S': ablation_encoder_s,
-        # 'TS': ablation_encoder_ts,
-        # f'{selected_model} w/o time enc': ablation_embedder_no_time,
-        # 'STT_MV': ablation_multivariate,
-        # 'MV_no_null': ablation_multivariate_no_null,
-        # 'MV_TS': ablation_multivariate_ts,
-        # 'MV_TE': ablation_multivariate_te,
-        # 'MV_NO_GLB': ablation_multivariate_no_global_encoder,
-        # 'MV_TS_no_null_no_GLB': ablation_multivariate_ts_no_null_no_global_encoder,
-        # 'STT_MV_null_sum': ablation_multivariate,
-        # 'STT2': ablation_stt_2,
-    }
+    # ablations_mapping = {
+    #     # selected_model: no_ablation,
+    #     # 'NO_GLB': ablation_no_global_encoder,
+    #     # 'S': ablation_encoder_s,
+    #     # 'TS': ablation_encoder_ts,
+    #     # f'{selected_model} w/o time enc': ablation_embedder_no_time,
+    #     'STT_MV': ablation_multivariate,
+    #     # 'MV_no_null': ablation_multivariate_no_null,
+    #     # 'MV_TS': ablation_multivariate_ts,
+    #     # 'MV_TE': ablation_multivariate_te,
+    #     # 'MV_NO_GLB': ablation_multivariate_no_global_encoder,
+    #     # 'MV_TS_no_null_no_GLB': ablation_multivariate_ts_no_null_no_global_encoder,
+    #     # 'STT_MV_null_sum': ablation_multivariate,
+    #     # 'STT2': ablation_stt_2,
+    # }
 
     ablations_mapping = [
         '_ST_G_nt_M',
