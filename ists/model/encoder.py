@@ -187,7 +187,6 @@ class GlobalEncoderLayer(tf.keras.layers.Layer):
         super(GlobalEncoderLayer, self).__init__()
 
         self.num_layers = num_layers
-        # self.do_exg = do_exg
 
         self.spatial_encoders = [
             EncoderLayer(
@@ -230,12 +229,6 @@ class GlobalEncoderLayer(tf.keras.layers.Layer):
     def call(self, x, **kwargs):
         exg_x, spt_x = x
 
-        if exg_x is None:
-            _shape = tf.shape(spt_x)
-            exg_x = tf.random.uniform(_shape)[:, 0:0, :]
-        if spt_x is None:
-            _shape = tf.shape(exg_x)
-            spt_x = tf.random.uniform(_shape)[:, 0:0, :]
         for i in range(self.num_layers):
             exg_x = self.exogenous_encoders[i](exg_x)
             spt_x = self.spatial_encoders[i](spt_x)

@@ -1,7 +1,9 @@
-from typing import Dict, List, Tuple, Literal, Optional, Any
+from typing import Dict, List, Tuple, Literal, Optional, Any, Union
 
 import numpy as np
 import pandas as pd
+from numpy import ndarray, dtype, generic
+from pandas import DataFrame
 from tqdm import tqdm
 
 from .preprocessing import time_encoding
@@ -211,8 +213,6 @@ def get_list_null_max_size(arr_list: List[np.ndarray], feature_mask: List[int]) 
 
 def prepare_data(
         ts_dict: Dict[str, pd.DataFrame],
-        num_past: int,
-        num_fut: int,
         features: List[str],
         label_col: str,
         freq: Literal['M', 'W', 'D'] = 'D',
@@ -220,25 +220,24 @@ def prepare_data(
         null_max_dist: int = None,
         time_feats: List[str] = None,
         with_fill: bool = True,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    # Empty array for saving x, y, time mask, and id for each record
-    x_array = []
-    y_array = []
-    time_array = []
-    dist_x_array = []
-    dist_y_array = []
-    id_array = []
-
+):
     assert label_col in features, f'Error, label {label_col} must be in the selected features'
     features.remove(label_col)
     features.insert(0, label_col)
+
+    new_features = []
+    if null_feat:
+        new_features += ['NullFeat']
+    if time_feats:
+        new_features += time_feats
+
+    ts_dict_new = dict()
 
     # Iterate each time-series
     for k, ts in tqdm(ts_dict.items()):
         # Reorder time-series column in order to have the label at the start
         ts = ts[features].copy()
 
-        new_features = []
         # Reindex time index
         ts_new = reindex_ts(ts, freq=freq)
 
@@ -250,20 +249,39 @@ def prepare_data(
         # Null indicator feature
         if null_feat:
             ts_new['NullFeat'] = null_indicator(ts_new, method=null_feat, max_dist=null_max_dist)
-            new_features += ['NullFeat']
         if null_max_dist:
-            ts_new['__NULL__'] = null_indicator(ts_new, method='code_lin')
-            # new_features += ['__NULL__']
+            ts_new['__NULL__'] = null_indicator(ts_new, method='code_lin') # todo: serve? sovrascritto in sliding window
 
         # Time Encoding
         if time_feats:
             ts_new = time_encoding(ts_new, codes=time_feats)
-            new_features += time_feats
 
         # Forward fill null values
         ts_new['__LABEL__'] = ts_new[label_col]
         if with_fill:
-            ts_new[features + new_features] = ts_new[features + new_features].ffill() #.fillna(method='ffill')
+            # ts_new[features + new_features] = ts_new[features + new_features].ffill() # todo: serve fare ffill di new_features?
+            ts_new[features] = ts_new[features].ffill()
+        ts_dict_new[k] = ts_new
+
+    return ts_dict_new, new_features
+
+
+def sliding_window_arrays(
+        ts_dict: Dict[str, pd.DataFrame],
+        num_past: int,
+        num_fut: int,
+        features: List[str],
+        new_features: List[str],
+):
+    # Empty array for saving x, y, time mask, and id for each record
+    x_array = []
+    y_array = []
+    time_array = []
+    dist_x_array = []
+    dist_y_array = []
+    id_array = []
+
+    for k, ts_new in ts_dict.items():
         # Sliding window step
         blob = sliding_window(ts_new, '__LABEL__', features + new_features, num_past, num_fut)
         if blob is None:
@@ -331,9 +349,13 @@ def prepare_train_test(
         spt_array: List[np.ndarray],
         exg_array: List[np.ndarray],
         test_start: str,
+        valid_start: str,
 ) -> dict:
-    is_train = time_array[:, -1] < pd.to_datetime(test_start).date()
-    is_test = (dist_y_array == 0) & (~is_train)
+    # is_train = time_array[:, -1] < pd.to_datetime(test_start).date()
+    # is_test = (dist_y_array == 0) & (~is_train)
+    is_train = time_array[:, -1] < pd.to_datetime(valid_start).date()
+    is_valid = (dist_y_array == 0) & (time_array[:, -1] >= pd.to_datetime(valid_start).date()) & (time_array[:, -1] < pd.to_datetime(test_start).date())
+    is_test = (dist_y_array == 0) & (time_array[:, -1] >= pd.to_datetime(test_start).date())
     res = {
         'x_train': x_array[is_train],
         'y_train': y_array[is_train],
@@ -343,7 +365,7 @@ def prepare_train_test(
         'id_train': id_array[is_train],
         'spt_train': [arr[is_train] for arr in spt_array],
         'exg_train': [arr[is_train] for arr in exg_array],
-        # 'exg_train': exg_array[is_train],
+
         'x_test': x_array[is_test],
         'y_test': y_array[is_test],
         'time_test': time_array[is_test],
@@ -352,6 +374,14 @@ def prepare_train_test(
         'id_test': id_array[is_test],
         'spt_test': [arr[is_test] for arr in spt_array],
         'exg_test': [arr[is_test] for arr in exg_array],
-        # 'exg_test': exg_array[is_test],
+
+        'x_valid': x_array[is_valid],
+        'y_valid': y_array[is_valid],
+        'time_valid': time_array[is_valid],
+        'dist_x_valid': dist_x_array[is_valid],
+        'dist_y_valid': dist_y_array[is_valid],
+        'id_valid': id_array[is_valid],
+        'spt_valid': [arr[is_valid] for arr in spt_array],
+        'exg_valid': [arr[is_valid] for arr in exg_array],
     }
     return res

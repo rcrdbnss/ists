@@ -9,7 +9,7 @@ import pandas as pd
 import tensorflow as tf
 
 from ists.model.encoder import SpatialExogenousEncoder
-from pipeline import data_step, model_step, parse_params, change_params
+from pipeline import data_step, model_step, parse_params, change_params, get_scalers, get_scalers_station
 
 
 def no_ablation(train_test_dict) -> dict:
@@ -18,7 +18,7 @@ def no_ablation(train_test_dict) -> dict:
 
 
 def ablation_embedder_no_feat(train_test_dict, code) -> dict:
-    for n in ['train', 'test']:
+    for n in ['train', 'test', 'valid']:
         cond_x = [x != code for x in train_test_dict['x_feat_mask']]
         train_test_dict[f'x_{n}'] = train_test_dict[f'x_{n}'][:, :, cond_x]
         train_test_dict[f'spt_{n}'] = [x[:, :, cond_x] for x in train_test_dict[f'spt_{n}']]
@@ -212,6 +212,10 @@ def ablation_stt_2(train_test_dict) -> dict:
 
 
 def apply_ablation_code(abl_code: str, train_test_dict):
+    suffix = None
+    if '#' in abl_code:
+        abl_code, suffix = abl_code.split('#')
+
     T, S, E = 'T' in abl_code, 'S' in abl_code, 'E' in abl_code
     G = 'G' in abl_code
     n, t = 'n' in abl_code, 't' in abl_code
@@ -240,6 +244,7 @@ def apply_ablation_code(abl_code: str, train_test_dict):
             + ('n' if n else '')
             + ('t' if t else '')
             + ('_M' if M else '')
+            + ('\n' + suffix if suffix else '')
     )
     return _abl_code, train_test_dict
 
@@ -301,21 +306,20 @@ def ablation(
     # }
 
     ablations_mapping = [
-        '_ST_G_nt_M',
-        '_ST_G__t_M',
-        '__T___nt',
-        '_S____nt_M',
-        '_ST_G_nt',
-        '_ST_G__t',
-        '_S____nt'
+        # 'ES__G_nt_M#null_sum_norm_iqr',
+        'ES____nt#null_sum_norm_iqr',
+        # 'ES__G__t_M#norm_iqr',
+        # '_ST_G__t_M#norm_iqr',
+        # '_ST_G_nt_M#null_sum_norm_iqr',
+        # '__T___nt',
+        # '_S____nt_M',
+        # '_ST_G_nt',
+        # '_ST_G__t',
+        # '_S____nt'
     ]
 
     for name in ablations_mapping:
         # func = ablations_mapping[name]
-
-        # Load data
-        # with open(pickle_path, "rb") as f:
-        #     train_test_dict = pickle.load(f)
 
         # Configure ablation test
         # train_test_dict = func(deepcopy(train_test_dict))
@@ -336,8 +340,6 @@ def ablation(
 def main():
     path_params, prep_params, eval_params, model_params = parse_params()
     # path_params = change_params(path_params, '../../data', '../../Dataset/AdbPo')
-    # if 'seed' not in model_params:
-    #     model_params['seed'] = 42
     _seed = model_params['seed']
     if _seed is not None:
         random.seed(_seed)
@@ -362,13 +364,17 @@ def main():
     pickle_path = os.path.join(data_dir, f"{out_name}.pickle")
     checkpoint_path = os.path.join(model_dir, f"{out_name}")
 
-    if os.path.exists(pickle_path):
-        print('Loading from', pickle_path, '...', end='')
-        with open(pickle_path, "rb") as f:
-            train_test_dict = pickle.load(f)
-        print(' done!')
-    else:
-        train_test_dict = data_step(path_params, prep_params, eval_params, keep_nan=False)
+    # if os.path.exists(pickle_path):
+    #     print('Loading from', pickle_path, '...', end='')
+    #     with open(pickle_path, "rb") as f:
+    #         train_test_dict = pickle.load(f)
+    #     print(' done!')
+    # else:
+    if True:
+        train_test_dict = data_step(
+            path_params, prep_params, eval_params, keep_nan=False, scaler_type=model_params['transform_type']
+        )
+
         train_test_dict['params'] = {
             'path_params': path_params,
             'prep_params': prep_params,
@@ -376,7 +382,9 @@ def main():
             'model_params': model_params,
         }
         with open(pickle_path, "wb") as f:
+            print('Saving to', pickle_path, '...', end='')
             pickle.dump(train_test_dict, f)
+            print(' done!')
 
     ablation(
         train_test_dict=train_test_dict,
@@ -397,5 +405,4 @@ def main():
 
 
 if __name__ == '__main__':
-    tf.config.set_visible_devices([], 'GPU')
     main()

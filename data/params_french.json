@@ -35,6 +35,7 @@
 
     "eval_params": {
         "train_start": "2015-01-01",
+        "valid_start": "2019-07-01",
         "test_start": "2020-01-01",
         "label_th": 0,
         "null_th": 13

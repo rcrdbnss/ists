@@ -57,7 +57,6 @@ class STTransformer(tf.keras.Model):
             exg_time_max_sizes=None,
             do_exg=True, do_spt=True, do_glb=True, do_emb=True, force_target=False,
             exg_size=None,
-            # univar_or_multivar : Literal['univar', 'multivar'] = 'univar',
             multivar = False,
             encoder_cls=GlobalEncoderLayer
     ):
@@ -80,7 +79,7 @@ class STTransformer(tf.keras.Model):
             with_cnn=exg_cnn,
             null_max_size=null_max_size,
             time_max_sizes=exg_time_max_sizes,
-        ) if self.do_exg or force_target else lambda x: None
+        ) if self.do_exg or force_target else lambda x: tf.zeros((tf.shape(x[0])[0], 0, d_model)) # lambda x: None
         if not do_emb:
             del self.exogenous_embedder
             self.exogenous_embedder = lambda x: tf.concat(x, axis=1)
@@ -91,7 +90,7 @@ class STTransformer(tf.keras.Model):
             with_cnn=spt_cnn,
             null_max_size=null_max_size,
             time_max_sizes=time_max_sizes,
-        ) if self.do_spt or force_target else lambda x: None
+        ) if self.do_spt or force_target else lambda x: tf.zeros((tf.shape(x[0])[0], 0, d_model)) # lambda x: None
         if not do_emb:
             del self.spatial_embedder
             self.spatial_embedder = lambda x: tf.concat(x, axis=1)
@@ -99,7 +98,7 @@ class STTransformer(tf.keras.Model):
         if force_target and not do_exg and not do_spt:
             # leave only spatial branch on
             del self.exogenous_embedder
-            self.exogenous_embedder = lambda x: None
+            self.exogenous_embedder = lambda x: tf.zeros((tf.shape(x[0])[0], 0, d_model)) # None
 
         # # todo: rewrite better
         # if encoder_cls == SpatialExogenousEncoder:
@@ -142,9 +141,9 @@ class STTransformer(tf.keras.Model):
     def call(self, inputs, **kwargs):
         exg_x, spt_x = inputs
         if self.force_target and self.do_spt and not self.do_exg:
-            exg_x = exg_x[0:1]
+            exg_x = [exg_x[0]]
         if self.force_target and not self.do_spt:
-            spt_x = spt_x[0:1]
+            spt_x = [spt_x[0]]
 
         exg_x = self.exogenous_embedder(exg_x)
         spt_x = self.spatial_embedder(spt_x)

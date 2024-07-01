@@ -1,8 +1,9 @@
 from datetime import datetime
-from typing import Dict, List, Tuple, Literal
+from typing import Dict, List, Tuple, Literal, Any
 
 import numpy as np
 import pandas as pd
+from numpy import ndarray, dtype
 from tqdm import tqdm
 
 from .preparation import drop_first_nan_rows, null_indicator
@@ -84,15 +85,12 @@ def find_last_date_idx(df: pd.DataFrame, date: datetime.date, th: int = 7) -> in
 
 
 def prepare_exogenous_data(
-        id_array: np.ndarray,
-        time_array: np.ndarray,
         exg_dict: Dict[str, pd.DataFrame],
-        num_past: int,
         features: List[str],
         time_feats: List[str],
         null_feat: Literal['code_bool', 'code_lin', 'bool', 'log', 'lin'], # = None,
         null_max_dist: int, # = None,
-) -> Tuple[List[np.ndarray], np.ndarray]:
+):
 
     exg_dict_feats = dict()
     for f in features:
@@ -109,7 +107,16 @@ def prepare_exogenous_data(
             ts = ts[[f, 'NullFeat'] + time_feats].ffill()
             _exg_dict[k] = ts
 
-    exg_array_feats, mask = [[] for _ in features], []
+    return exg_dict_feats
+
+
+def exg_sliding_window_arrays(
+        exg_dict_feats: dict[str, dict[Any, Any]],
+        id_array: np.ndarray,
+        time_array: np.ndarray,
+        num_past: int,
+):
+    exg_array_feats, mask = [[] for _ in exg_dict_feats.keys()], []
     for rid, rtime in tqdm(zip(id_array, time_array)):
         exg_dict_feats_t, mask_t = [], []
         for f, _exg_dict in exg_dict_feats.items():
@@ -130,7 +137,7 @@ def prepare_exogenous_data(
                 # exg_dict_feats_t.append(None)
         mask_t = np.all(mask_t)
         if mask_t:
-            for i in range(len(features)):
+            for i in range(len(exg_dict_feats.keys())):
                 exg_array_feats[i].append(exg_dict_feats_t[i])
         mask.append(mask_t)
 

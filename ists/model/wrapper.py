@@ -211,7 +211,7 @@ class ModelWrapper(object):
 
         self.transform_type = transform_type  # transformer = scaler
         if transform_type:
-            self.transformer = get_transformer(transform_type)
+            # self.transformer = get_transformer(transform_type)
             self.spt_transformer = get_transformer(transform_type)
             self.exg_transformer = get_transformer(transform_type)
 
@@ -274,6 +274,21 @@ class ModelWrapper(object):
 
         return spt, exg
 
+    def _transform(self, spt: List[np.ndarray], exg: List[np.ndarray]):
+        if self.transform_type:
+            cond_x = np.array(self.feature_mask) == 0
+
+            spt = [np.copy(arr) for arr in spt]
+            for data in spt:
+                data[:, :, cond_x] = self.spt_transformer.transform(data[:, :, cond_x].reshape(-1, 1)).reshape(
+                    data[:, :, cond_x].shape)
+
+            for data, exg_scaler in zip(exg, self.exg_transformer):
+                data[:, :, cond_x] = exg_scaler.transform(data[:, :, cond_x].reshape(-1, 1)).reshape(
+                    data[:, :, cond_x].shape)
+
+        return spt, exg
+
     def _label_transform(self, y):
         if self.transform_type:
             y = np.copy(y)
@@ -312,21 +327,56 @@ class ModelWrapper(object):
 
     def fit(
             self,
-            x: np.ndarray, # (343, 96, 3)
-            spt: List[np.ndarray], # (4, 343, 48, 3)
-            # exg: np.ndarray,
-            exg: List[np.ndarray], # (4, 343, 96, 3)
+            x: np.ndarray,
+            spt: List[np.ndarray],
+            exg: List[np.ndarray],
             y: np.ndarray,
             epochs: int = 50,
             batch_size: int = 32,
             validation_split: float = 0.1,
             verbose: int = 0,
+            id_array: np.ndarray = None,
+            spt_scalers = None,
+            exg_scalers = None,
+            val_x: np.ndarray = None, val_spt: List[np.ndarray] = None, val_exg: List[np.ndarray] = None, val_y: np.ndarray = None
     ):
         spt = self._get_spatial_array(x, spt)
         exg = self._get_spatial_array(x, exg)
-        spt, exg = self._fit_transform(spt, exg)
-        # if not self.do_exg:
-        #     exg = [exg[0][:, 0:0]]
+        val_spt, val_exg = self._get_spatial_array(val_x, val_spt), self._get_spatial_array(val_x, val_exg)
+
+        # spt, exg = self._fit_transform(spt, exg)
+
+        # if spt_scalers is None or exg_scalers is None:
+        #     self.transform_type = None
+        # else:
+        #     self.spt_transformer = spt_scalers[list(spt_scalers.keys())[0]]
+        #     exg_scalers = [self.spt_transformer] + [exg_scaler for exg_scaler in exg_scalers.values()]
+        #     self.exg_transformer = exg_scalers
+        spt, exg = self._transform(spt, exg)
+
+        # spt, exg = np.array(spt), np.array(exg)
+        # for k, _scaler in spt_scalers.items():
+        #     for scaler in _scaler.values(): continue
+        #     selector_axis_1 = np.arange(spt.shape[1])[id_array == k]
+        #     selector_axis_3 = np.arange(spt.shape[3])[np.array(self.feature_mask) == 0]
+        #     selector = np.ix_(range(spt.shape[0]), selector_axis_1, range(spt.shape[2]), selector_axis_3)
+        #     x = spt[selector]
+        #     shape = x.shape
+        #     x = scaler.transform(x.reshape(-1, 1)).reshape(shape)
+        #     spt[selector] = x
+
+        # cond_x = np.array(self.feature_mask) == 0
+        #
+        # spt = [np.copy(arr) for arr in spt]
+        # for spt_scaler in spt_scalers.values(): continue
+        # for data in spt:
+        #     data[:, :, cond_x] = spt_scaler.transform(data[:, :, cond_x].reshape(-1, 1)).reshape(data[:, :, cond_x].shape)
+        #
+        # exg = [np.copy(arr) for arr in exg]
+        # exg_scalers = [spt_scaler] + [exg_scaler for exg_scaler in exg_scalers.values()]
+        # for data, exg_scaler in zip(exg, exg_scalers):
+        #     data[:, :, cond_x] = exg_scaler.transform(data[:, :, cond_x].reshape(-1, 1)).reshape(data[:, :, cond_x].shape)
+
         y = self._label_transform(y)
 
         model_checkpoint = tf.keras.callbacks.ModelCheckpoint(
@@ -339,12 +389,14 @@ class ModelWrapper(object):
             # save_format='tf'
         )
 
+        print('Call to ModelWrapper.model.fit')
         self.history = self.model.fit(
             x=(exg, spt),
             y=y,
             epochs=epochs,
             batch_size=batch_size,
-            validation_split=validation_split,
+            # validation_split=validation_split,
+            validation_data=((val_exg, val_spt), val_y),
             verbose=verbose,
             callbacks=[model_checkpoint]
         )
@@ -356,9 +408,9 @@ class ModelWrapper(object):
     def predict(self, x: np.ndarray, spt: List[np.ndarray], exg: List[np.ndarray]):
         spt = self._get_spatial_array(x, spt) # if self.do_spt else [x]
         exg = self._get_spatial_array(x, exg) # if self.do_exg else [np.random.random(x.shape)]
-        spt, exg = self._fit_transform(spt, exg)
-        # if not self.do_exg:
-        #     exg = [exg[0][:, 0:0]]
+        # spt, exg = self._fit_transform(spt, exg)
+        if self.transform_type is not None:
+            spt, exg = self._transform(spt, exg)
 
         y_preds = self.model.predict(
             (exg, spt)

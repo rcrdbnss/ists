@@ -1,21 +1,29 @@
+import datetime
 import os
 import json
 import pickle
 import random
+from typing import Tuple, Dict, Any
 
 import numpy as np
 import pandas as pd
 import tensorflow as tf
 import argparse
 
+from pandas import DataFrame
+from sklearn.preprocessing import StandardScaler
+from tqdm import tqdm
+
+from ists import utils
 from ists.dataset.read import load_data
 from ists.model.encoder import SpatialExogenousEncoder
-from ists.preparation import prepare_data, prepare_train_test, filter_data
+from ists.preparation import prepare_data, prepare_train_test, filter_data, sliding_window_arrays
 from ists.preparation import define_feature_mask, get_list_null_max_size
 from ists.preprocessing import get_time_max_sizes
-from ists.spatial import prepare_exogenous_data, prepare_spatial_data
+from ists.spatial import prepare_exogenous_data, prepare_spatial_data, exg_sliding_window_arrays
 from ists.model.wrapper import ModelWrapper
 from ists.metrics import compute_metrics
+from ists.utils import IQRMasker
 
 
 def parse_params():
@@ -25,6 +33,7 @@ def parse_params():
     parser.add_argument('-f', '--file', type=str, required=True,
                         help='the path where the configuration is stored.')
     parser.add_argument('--dev', action='store_true', help='Run on development data')
+    parser.add_argument('--cpu', action='store_true', help='Run on CPU')
     parser.add_argument('--num-fut', type=int, default=0, help='Number of future values to predict')
     parser.add_argument('--nan-percentage', type=float, default=-1., help='Percentage of NaN values to insert')
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
@@ -54,6 +63,10 @@ def parse_params():
         conf['model_params']['epochs'] = 2
         if conf['path_params']['type'] == 'french':
             conf['eval_params']['test_start'] = '2017-07-01'
+            conf['eval_params']['valid_start'] = '2017-01-01'
+
+    if args.cpu:
+        tf.config.set_visible_devices([], 'GPU')
 
     return conf['path_params'], conf['prep_params'], conf['eval_params'], conf['model_params']
 
@@ -66,7 +79,7 @@ def change_params(path_params: dict, base_string: str, new_string: str) -> dict:
     return path_params
 
 
-def data_step(path_params: dict, prep_params: dict, eval_params: dict, keep_nan: bool = False) -> dict:
+def data_step(path_params: dict, prep_params: dict, eval_params: dict, keep_nan: bool = False, scaler_type=None):
     ts_params = prep_params['ts_params']
     feat_params = prep_params['feat_params']
     spt_params = prep_params['spt_params']
@@ -81,11 +94,74 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, keep_nan:
         nan_percentage=path_params['nan_percentage']
     )
 
-    # Prepare x, y, time, dist, id matrix
-    x_array, y_array, time_array, dist_x_array, dist_y_array, id_array = prepare_data(
+    valid_start = pd.to_datetime(eval_params['test_start']).date()
+
+    for k in ts_dict:
+        for f in ts_params['features']:
+            iqr_masker = IQRMasker()
+
+            ts_train = ts_dict[k].loc[ts_dict[k].index < valid_start, f]
+            if ts_train.isna().all(): continue
+            ts_train = iqr_masker.fit_transform(ts_train.values.reshape(-1, 1))
+            ts_dict[k].loc[ts_dict[k].index < valid_start, f] = ts_train.reshape(-1)
+
+            ts_test = ts_dict[k].loc[ts_dict[k].index >= valid_start, f]
+            if ts_test.isna().all(): continue
+            ts_test = iqr_masker.transform(ts_test.values.reshape(-1, 1))
+            ts_dict[k].loc[ts_dict[k].index >= valid_start, f] = ts_test.reshape(-1)
+
+    for k in exg_dict:
+        for f in exg_params['features']:
+            iqr_masker = IQRMasker()
+
+            ts_train = exg_dict[k].loc[exg_dict[k].index < valid_start, f]
+            if ts_train.isna().all(): continue
+            ts_train = iqr_masker.fit_transform(ts_train.values.reshape(-1, 1))
+            exg_dict[k].loc[exg_dict[k].index < valid_start, f] = ts_train.reshape(-1)
+
+            ts_test = exg_dict[k].loc[exg_dict[k].index >= valid_start, f]
+            if ts_test.isna().all(): continue
+            ts_test = iqr_masker.transform(ts_test.values.reshape(-1, 1))
+            exg_dict[k].loc[exg_dict[k].index >= valid_start, f] = ts_test.reshape(-1)
+
+    # spt_scalers = dict()
+    for k, ts in ts_dict.items():
+        # spt_scalers[k] = dict()
+        for f in ts_params['features']:
+            scaler = StandardScaler()
+            # spt_scalers[k][f] = scaler
+
+            train_ts = ts.loc[ts.index < valid_start, f]
+            if train_ts.isna().all(): continue
+            train_ts = scaler.fit_transform(train_ts.values.reshape(-1, 1))
+            ts.loc[ts.index < valid_start, f] = train_ts.reshape(-1)
+
+            test_ts = ts.loc[ts.index >= valid_start, f]
+            if test_ts.isna().all(): continue
+            test_ts = scaler.transform(test_ts.values.reshape(-1, 1))
+            ts.loc[ts.index >= valid_start, f] = test_ts.reshape(-1)
+
+
+    # exg_scalers = dict()
+    for k, ts in exg_dict.items():
+        # exg_scalers[k] = dict()
+        for f in exg_params['features']:
+            scaler = StandardScaler()
+            # exg_scalers[k][f] = scaler
+
+            train_ts = ts.loc[ts.index < valid_start, f]
+            if train_ts.isna().all(): continue
+            train_ts = scaler.fit_transform(train_ts.values.reshape(-1, 1))
+            ts.loc[ts.index < valid_start, f] = train_ts.reshape(-1)
+
+            test_ts = ts.loc[ts.index >= valid_start, f]
+            if test_ts.isna().all(): continue
+            test_ts = scaler.transform(test_ts.values.reshape(-1, 1))
+            ts.loc[ts.index >= valid_start, f] = test_ts.reshape(-1)
+
+
+    ts_dict_new, new_features = prepare_data(
         ts_dict=ts_dict,
-        num_past=ts_params['num_past'],
-        num_fut=ts_params['num_fut'],
         features=ts_params['features'],
         label_col=ts_params['label_col'],
         freq=ts_params['freq'],
@@ -93,6 +169,14 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, keep_nan:
         null_max_dist=feat_params['null_max_dist'],
         time_feats=feat_params['time_feats'],
         with_fill=not keep_nan
+    )
+
+    x_array, y_array, time_array, dist_x_array, dist_y_array, id_array = sliding_window_arrays(
+        ts_dict=ts_dict_new,
+        num_past=ts_params['num_past'],
+        num_fut=ts_params['num_fut'],
+        features=ts_params['features'],
+        new_features=new_features,
     )
     print(f'Num of records raw: {len(x_array)}')
     # Compute feature mask and time encoding max sizes
@@ -139,16 +223,19 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, keep_nan:
     )
     print(f'Num of records after null filter: {len(x_array)}')
 
-    # Prepare exogenous matrix
-    exg_array, mask = prepare_exogenous_data(
-        id_array=id_array,
-        time_array=time_array[:, 1],
+    exg_dict_new = prepare_exogenous_data(
         exg_dict=exg_dict,
-        num_past=exg_params['num_past'],
         features=exg_params['features'],
         time_feats=exg_params['time_feats'],
         null_feat=feat_params['null_feat'],
         null_max_dist=feat_params['null_max_dist'],
+    )
+
+    exg_array, mask = exg_sliding_window_arrays(
+        exg_dict_feats=exg_dict_new,
+        id_array=id_array,
+        time_array=time_array[:, 1],
+        num_past=exg_params['num_past'],
     )
     # Compute exogenous feature mask and time encoding max sizes
     exg_feature_mask = define_feature_mask(base_features=exg_params['features'], time_feats=exg_params['time_feats'])
@@ -173,8 +260,10 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, keep_nan:
         spt_array=spt_array,
         exg_array=exg_array,
         test_start=eval_params['test_start'],
+        valid_start=eval_params['valid_start'],
     )
     print(f"X train: {len(res['x_train'])}")
+    print(f"X valid: {len(res['x_valid'])}")
     print(f"X test: {len(res['x_test'])}")
 
     # Save extra params in train test dictionary
@@ -184,7 +273,9 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, keep_nan:
 
     # Save null max size by finding the maximum between train and test if any
     res['null_max_size'] = get_list_null_max_size(
-        [res['x_train']] + [res['x_test']] + res['spt_train'] + res['spt_test'],
+        [res['x_train']] + [res['x_test']] + [res['x_valid']] +
+        res['spt_train'] + res['spt_test'] + res['spt_valid'] +
+        res['exg_train'] + res['exg_test'] + res['exg_valid'],
         x_feature_mask
     )
 
@@ -215,6 +306,8 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
     if 'encoder_cls' in model_params:
         nn_params['encoder_cls'] = model_params['encoder_cls']
 
+    transform_type = None  # todo: temporary
+
     model = ModelWrapper(
         checkpoint_dir=checkpoint_dir,
         model_type=model_type,
@@ -234,6 +327,10 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
         batch_size=batch_size,
         validation_split=0.1,
         verbose=1,
+        id_array=train_test_dict['id_train'],
+        # spt_scalers=train_test_dict['spt_scalers'], exg_scalers=train_test_dict['exg_scalers'],
+        val_x=train_test_dict['x_valid'], val_spt=train_test_dict['spt_valid'], val_exg=train_test_dict['exg_valid'],
+        val_y=train_test_dict['y_valid']
     )
 
     preds = model.predict(
@@ -262,11 +359,52 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
     return res
 
 
+def get_scalers(ts_dict_preproc, exg_dict_preproc, scaler_type, spt_feat):
+    if scaler_type is None:
+        spt_scalers = None
+        exg_scalers = None
+    else:
+        data = np.concatenate([ts[spt_feat].values for k, ts in ts_dict_preproc.items()]).reshape(-1, 1)
+        spt_scalers = {spt_feat: StandardScaler().fit(data)}
+        exg_scalers = dict()
+        for ef, exg_feat_dict in exg_dict_preproc.items():
+            data = np.concatenate([ts[ef].values for k, ts in exg_feat_dict.items()]).reshape(-1, 1)
+            exg_scalers[ef] = StandardScaler().fit(data)
+    return spt_scalers, exg_scalers
+
+
+def get_scalers_station(ts_dict_preproc, exg_dict_preproc, scaler_type, spt_feat):
+    if scaler_type is None:
+        spt_scalers = None
+        exg_scalers = None
+    else:
+        spt_scalers = {k: dict() for k in ts_dict_preproc}
+        for k, ts in ts_dict_preproc.items():
+            f = spt_feat
+            scaler = StandardScaler().fit(ts[f].values.reshape(-1, 1))
+            spt_scalers[k][f] = scaler
+        exg_scalers = dict()
+
+        # transpose dictionary
+        _exg_dict_preproc = dict()
+        for k1, dt1 in exg_dict_preproc.items():
+            for k2, dt2 in dt1.items():
+                if k2 not in _exg_dict_preproc:
+                    _exg_dict_preproc[k2] = dict()
+                _exg_dict_preproc[k2][k1] = dt2
+        exg_dict_preproc = _exg_dict_preproc
+
+        for k, feats_dict in exg_dict_preproc.items():
+            exg_scalers[k] = dict()
+            for f, ts in feats_dict.items():
+                scaler = StandardScaler().fit(ts[f].values.reshape(-1, 1))
+                exg_scalers[k][f] = scaler
+    return spt_scalers, exg_scalers
+
+
 def main():
     path_params, prep_params, eval_params, model_params = parse_params()
     # path_params = change_params(path_params, '../../data', '../../Dataset/AdbPo')
-    # if 'seed' not in model_params:
-    #     model_params['seed'] = 42
     _seed = model_params['seed']
     if _seed is not None:
         random.seed(_seed)
@@ -291,13 +429,16 @@ def main():
     pickle_path = os.path.join(data_dir, f"{out_name}.pickle")
     checkpoint_path = os.path.join(model_dir, f"{out_name}")
 
-    if os.path.exists(pickle_path):
-        print('Loading from', pickle_path, '...', end='')
-        with open(pickle_path, "rb") as f:
-            train_test_dict = pickle.load(f)
-        print(' done!')
-    else:
-        train_test_dict = data_step(path_params, prep_params, eval_params, keep_nan=False)
+    # if os.path.exists(pickle_path):
+    #     print('Loading from', pickle_path, '...', end='')
+    #     with open(pickle_path, "rb") as f:
+    #         train_test_dict = pickle.load(f)
+    #     print(' done!')
+    # else:
+    if True:
+        train_test_dict = data_step(
+            path_params, prep_params, eval_params, keep_nan=False, scaler_type=model_params['transform_type'])
+
         train_test_dict['params'] = {
             'path_params': path_params,
             'prep_params': prep_params,
@@ -305,7 +446,9 @@ def main():
             'model_params': model_params,
         }
         with open(pickle_path, "wb") as f:
+            print('Saving to', pickle_path, '...', end='')
             pickle.dump(train_test_dict, f)
+            print(' done!')
 
     if os.path.exists(results_path):
         results = pd.read_csv(results_path, index_col=0).T.to_dict()
@@ -381,5 +524,4 @@ def main2():
 
 
 if __name__ == '__main__':
-    # tf.config.set_visible_devices([], 'GPU')
     main()
