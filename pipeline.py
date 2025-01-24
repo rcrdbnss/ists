@@ -63,15 +63,6 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
         'test_y': train_test_dict['y_test'],
     }
 
-    # fit_timedeltas, predict_timedeltas = dict(), dict()
-    # if 'x_train_timedeltas' in train_test_dict:
-    #     fit_timedeltas['x_train_timedeltas'] = train_test_dict['x_train_timedeltas']
-    # if 'x_valid_timedeltas' in train_test_dict:
-    #     fit_timedeltas['x_val_timedeltas'] = train_test_dict['x_valid_timedeltas']
-    # if 'x_test_timedeltas' in train_test_dict:
-    #     fit_timedeltas['x_test_timedeltas'] = train_test_dict['x_test_timedeltas']
-    #     predict_timedeltas['x_timedeltas'] = train_test_dict['x_test_timedeltas']
-
     model.fit(
         x=train_test_dict['x_train'],
         spt=train_test_dict['spt_train'],
@@ -83,22 +74,21 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
         verbose=1,
         **valid_args,
         **test_args,
-        # **fit_timedeltas,
         early_stop_patience=patience,
     )
 
     res = {}
     scalers = train_test_dict['scalers']
-    # for id in scalers:
-    #     for f in scalers[id]:
-    #         if isinstance(scalers[id][f], dict):
-    #             scaler = {
-    #                 "standard": StandardScaler,
-    #                 # "minmax": MinMaxScaler,
-    #             }[transform_type]()
-    #             for k, v in scalers[id][f].items():
-    #                 setattr(scaler, k, v)
-    #             scalers[id][f] = scaler
+    for id in scalers:
+        for f in scalers[id]:
+            if isinstance(scalers[id][f], dict):
+                scaler = {
+                    "standard": StandardScaler,
+                    # "minmax": MinMaxScaler,
+                }[transform_type]()
+                for k, v in scalers[id][f].items():
+                    setattr(scaler, k, v)
+                scalers[id][f] = scaler
 
     preds = model.predict(
         x=train_test_dict['x_test'],

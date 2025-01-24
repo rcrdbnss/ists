@@ -54,7 +54,8 @@ def load_ushcn_data(
         exg_cols: List[str],
         subset_filename: str = None,
         nan_percentage: float = 0,
-        min_length=0
+        min_length=0,
+        max_null_th=float('inf')
 ) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], Dict[str, pd.Series]]:
 
     label_col = ts_cols[0]
@@ -109,24 +110,24 @@ def load_ushcn_data(
     if nan_percentage > 0:
         nan, tot = 0, 0
         for stn in tqdm(ts_dict.keys(), desc='Injecting null values'):
-            ts = insert_null_values(ts_dict[stn], nan_percentage, ts_cols)
-            ts_dict[stn] = ts
-            nan += ts.isnull().sum().sum()
-            tot += len(ts)
-            """for col in cols:
-                ts_dict[stn][col] = insert_nulls_max_consecutive_thr(ts_dict[stn][col].numpy(), nan_percentage, 12)
+            # ts = insert_null_values(ts_dict[stn], nan_percentage, ts_cols)
+            # ts_dict[stn] = ts
+            # nan += ts.isnull().sum().sum()
+            # tot += len(ts)
+            for col in cols:
+                ts_dict[stn][col] = insert_nulls_max_consecutive_thr(ts_dict[stn][col].to_numpy(), nan_percentage, max_null_th)
                 nan += ts_dict[stn][col].isnull().sum()
-                tot += len(ts_dict[stn][col])"""
+                tot += len(ts_dict[stn][col])
         print(f"Missing values after injection: {nan}/{tot} ({nan/tot:.2%})")
 
     # Create a copy of exogenous series from the raw time-series dict
-    exg_dict = {}
-    for stn in ts_dict.keys():
-        ts = ts_dict[stn]
-        exg_dict[stn] = ts.loc[:, exg_cols]
-        ts_dict[stn] = ts.loc[:, ts_cols]
+    # exg_dict = {}
+    # for stn in ts_dict.keys():
+    #     ts = ts_dict[stn]
+    #     exg_dict[stn] = ts.loc[:, exg_cols]
+    #     ts_dict[stn] = ts.loc[:, ts_cols]
 
-    return ts_dict, exg_dict, spt_dict
+    return ts_dict, spt_dict
 
 
 def create_spatial_matrix(coords_dict: Dict[str, ContextType], with_haversine: bool = False) -> pd.DataFrame:

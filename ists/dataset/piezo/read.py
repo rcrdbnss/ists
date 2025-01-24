@@ -147,26 +147,6 @@ def link_exogenous_series(
 
 def create_spatial_matrix(coords_dict: Dict[str, ContextType], with_haversine: bool = False) -> pd.DataFrame:
     """ Create the spatial matrix """
-    # Read id array
-    ids = list(coords_dict.keys())
-    # Extract x and y coords for each point
-    xy_data = [{'x': val['x'], 'y': val['y']} for val in coords_dict.values()]
-    xy_data = pd.DataFrame(xy_data).values
-    if not with_haversine:
-        # Compute pairwise euclidean distances for each pair of coords
-        dist_matrix = pairwise_distances(xy_data)
-    else:
-        # Compute pairwise haversine distances for each pair of coords
-        dist_matrix = haversine_distances(xy_data)
-
-    dist_matrix = pd.DataFrame(dist_matrix, columns=ids, index=ids)
-
-    return dist_matrix
-
-
-def _create_spatial_matrix(coords_dict: Dict[str, ContextType], with_haversine: bool = False) -> pd.DataFrame:
-    """ Create the spatial matrix """
-    # Extract coordinates and IDs
     ids = list(coords_dict.keys())
     xy_data = np.array([[v['x'], v['y']] for v in coords_dict.values()])
 

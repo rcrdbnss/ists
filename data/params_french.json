@@ -16,7 +16,7 @@
             "freq": "D"
         },
         "feat_params": {
-            "time_feats": ["D"]
+            "time_feats": ["M", "WY"]
         },
         "spt_params": {
             "num_spt": 2,
@@ -25,7 +25,7 @@
         "exg_params": {
             "features": ["tp", "e"],
             "features_stn": ["prof"],
-            "time_feats": ["D"]
+            "time_feats": ["M", "WY"]
         }
     },
 

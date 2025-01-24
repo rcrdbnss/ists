@@ -55,7 +55,8 @@ def load_data(
             exg_cols=exg_features,
             subset_filename=ex_filename,
             nan_percentage=nan_percentage,
-            min_length=num_past+num_future
+            min_length=num_past+num_future,
+            max_null_th=max_null_th
         )
     else:
         raise ValueError(f'Dataset {data_type} is not supported, it must be: adbpo, french, or ushcn')

@@ -3,18 +3,16 @@ import json
 import os
 import pickle
 import random
-import time
 
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
+from data_step_refactor import time_encoding, link_spatial_data_water_body, link_spatial_data, null_distance_array, \
+    extract_windows
 from ists.dataset.read import load_data
-from ists.preparation import define_feature_mask, prepare_train_test, get_list_null_max_size, prepare_data, \
-    sliding_window_arrays, filter_data
+from ists.preparation import define_feature_mask, prepare_train_test, get_list_null_max_size
 from ists.preprocessing import get_time_max_sizes
-from ists.spatial import prepare_spatial_data, prepare_spatial_data_xy, prepare_exogenous_data, \
-    exg_sliding_window_arrays_adbpo, exg_sliding_window_arrays
 from ists.utils import IQRMasker
 
 
@@ -68,10 +66,6 @@ def parse_params():
             conf['path_params']['ctx_filename'] = f"{ctx_name}_dev{ctx_ext}"
         conf['model_params']['epochs'] = 3
         conf['model_params']['patience'] = 1
-        # if conf['path_params']['type'] == 'french':
-        #     conf['eval_params']['test_start'] = '2017-07-01'
-        #     if 'valid_start' in conf['eval_params']:
-        #         conf['eval_params']['valid_start'] = '2017-01-01'
 
     # if args.cpu:
     #     tf.config.set_visible_devices([], 'GPU')
@@ -180,7 +174,7 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, keep_nan:
     cols = [label_col] + exg_cols
 
     # Load dataset
-    ts_dict, exg_dict, spt_dict = load_data(
+    ts_dict, spt_dict = load_data(
         ts_filename=path_params['ts_filename'],
         context_filename=path_params['ctx_filename'],
         ex_filename=path_params['ex_filename'],
@@ -195,48 +189,16 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, keep_nan:
         max_null_th=eval_params['null_th']
     )
 
-    # ts_dict = {k: pd.concat([v, exg_dict[k]], axis=1) for k, v in ts_dict.items()}
+    train_end_excl = pd.to_datetime(eval_params["valid_start"]).date()
 
-    if 'valid_start' in eval_params and eval_params['valid_start']:
-        train_end_excl = pd.to_datetime(eval_params['valid_start']).date()
-    else:
-        train_end_excl = pd.to_datetime(eval_params['test_start']).date()
-        eval_params['valid_start'] = None
+    ts_dict = apply_iqr_masker(ts_dict, cols, train_end_excl)
 
-    scale_by_stn = {
-        'french': True,
-        'ushcn': True,
-        'adbpo': True
-    }[path_params['type']]
-    if scale_by_stn:
-        ts_dict = apply_iqr_masker_by_stn(ts_dict, ts_params['features'], train_end_excl)
-        exg_dict = apply_iqr_masker_by_stn(exg_dict, exg_params['features'], train_end_excl)
-    else:
-        ts_dict = apply_iqr_masker(ts_dict, ts_params['features'], train_end_excl)
-        exg_dict = apply_iqr_masker(exg_dict, exg_params['features'], train_end_excl)
-
-    # train_end_excl = pd.to_datetime(eval_params["valid_start"]).date()
-
-    # ts_dict = apply_iqr_masker(ts_dict, cols, train_end_excl)
-
-    print(f'Null values after IQR masking')
     nan, tot = 0, 0
     for stn in ts_dict:
-        nan += ts_dict[stn].isna().sum().sum()
-        tot += ts_dict[stn].size
-    print(f'  - Target: {nan}/{tot} ({nan/tot:.2%})')
-    nan, tot = 0, 0
-    for stn in exg_dict:
-        nan += exg_dict[stn].isna().sum().sum()
-        tot += exg_dict[stn][exg_params['features']].size
-    print(f'  - Context: {nan}/{tot} ({nan/tot:.2%})')
-
-    # nan, tot = 0, 0
-    # for stn in ts_dict:
-    #     for col in cols:
-    #         nan += ts_dict[stn][col].isna().sum()
-    #         tot += len(ts_dict[stn][col])
-    # print(f"Null values after IQR masking: {nan}/{tot} ({nan/tot:.2%})")
+        for col in cols:
+            nan += ts_dict[stn][col].isna().sum()
+            tot += len(ts_dict[stn][col])
+    print(f"Null values after IQR masking: {nan}/{tot} ({nan/tot:.2%})")
 
     if scaler_type == "minmax":
         Scaler = MinMaxScaler
@@ -253,62 +215,22 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, keep_nan:
 
     for stn in stns_no_data:
         ts_dict.pop(stn)
-        exg_dict.pop(stn)
-        # spt_dict.pop(stn)
 
-    if not scaler_type:
-        ...
-    elif scale_by_stn:
-        print("Scaler:", scaler_type)
-        ts_dict, spt_scalers = apply_scaler_by_stn(ts_dict, ts_params['features'], train_end_excl, Scaler)
-        exg_dict, _ = apply_scaler_by_stn(exg_dict, exg_params['features'], train_end_excl, Scaler)
-    else:
-        print("Scaler:", scaler_type)
-        ts_dict, spt_scalers = apply_scaler(ts_dict, ts_params['features'], train_end_excl, Scaler)
-        spt_scalers_ = dict()
-        for f, scaler in spt_scalers.items():
-            for stn in ts_dict:
-                if stn not in spt_scalers_:
-                    spt_scalers_[stn] = dict()
-                spt_scalers_[stn][f] = scaler
-        spt_scalers = spt_scalers_
-        exg_dict, _ = apply_scaler(exg_dict, exg_params['features'], train_end_excl, Scaler)
+    ts_dict, spt_scalers = apply_scaler_by_stn(ts_dict, cols, train_end_excl, Scaler)
+    spt_scalers = {
+        stn: {label_col: vars(spt_scalers[stn][label_col])} for stn in spt_scalers
+    }
 
-    # ts_dict, spt_scalers = apply_scaler_by_stn(ts_dict, cols, train_end_excl, Scaler)
-    # spt_scalers = {
-    #     stn: {label_col: vars(spt_scalers[stn][label_col])} for stn in spt_scalers
-    # }
+    exg_cols = exg_cols + (exg_params['features_stn'] if 'features_stn' in exg_params else [])
+    cols = [label_col] + exg_cols
 
-    ts_dict, new_features = prepare_data(
-        ts_dict=ts_dict,
-        features=ts_params['features'],
-        label_col=ts_params['label_col'],
-        freq=ts_params['freq'],
-        # null_feat=feat_params['null_feat'],
-        # null_max_dist=feat_params['null_max_dist'],
-        time_feats=feat_params['time_feats'],
-        with_fill=not keep_nan
-    )
-
-    x_array, y_array, time_array, dist_x_array, dist_y_array, id_array = sliding_window_arrays(
-        ts_dict=ts_dict,
-        num_past=ts_params['num_past'],
-        num_fut=ts_params['num_fut'],
-        features=ts_params['features'],
-        new_features=new_features,
-    )
-    print(f'Num of records raw: {len(x_array)}')
-
-    # exg_cols = exg_cols + (exg_params['features_stn'] if 'features_stn' in exg_params else [])
-    # cols = [label_col] + exg_cols
-    #
     time_feats = feat_params["time_feats"]
-    # for stn, ts in ts_dict.items():
-    #     for col in cols:
-    #         ts[f"{col}_is_null"] = ts[col].isnull().astype(int)
-    #     ts = time_encoding(ts, time_feats)
-    #     ts[cols] = ts[cols].ffill()
-    #     ts_dict[stn] = ts
+    for stn, ts in ts_dict.items():
+        for col in cols:
+            ts[f"{col}_is_null"] = ts[col].isnull().astype(int)
+        ts = time_encoding(ts, time_feats)
+        ts[cols] = ts[cols].ffill()
+        ts_dict[stn] = ts
 
     # Compute feature mask and time encoding max sizes
     x_feature_mask = define_feature_mask(
@@ -320,132 +242,47 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, keep_nan:
     x_time_max_sizes = get_time_max_sizes(time_feats)
     print(f'Feature mask: {x_feature_mask}')
 
-    start_time = time.time()
-    prepare_spatial_data_fn = {
-        'french': prepare_spatial_data,
-        'adbpo': prepare_spatial_data,
-        'ushcn': prepare_spatial_data_xy
-        # "french": link_spatial_data_water_body,
-        # "ushcn": link_spatial_data,
+    num_spt = spt_params["num_spt"]
+
+    link_spatial_data_fn = {
+        "french": link_spatial_data_water_body,
+        "ushcn": link_spatial_data,
     }[path_params['type']]
-    spt_array, mask, y_spt_array = prepare_spatial_data_fn(
-        x_array=x_array,
-        id_array=id_array,
-        time_array=time_array[:, 1],
-        dist_x_array=dist_x_array,
-        # num_past=spt_params['num_past'],
-        num_past=ts_params['num_past'],
-        num_spt=spt_params['num_spt'],
+    ts_dict = link_spatial_data_fn(
+        ts_dict=ts_dict,
+        label_col=label_col,
+        num_spt=num_spt,
         spt_dict=spt_dict,
-        max_dist_th=spt_params['max_dist_th'],
-        max_null_th=eval_params['null_th'],
-        y_array=y_array
-    )
-    # ts_dict = prepare_spatial_data_fn(
-    #     ts_dict=ts_dict,
-    #     label_col=label_col,
-    #     exg_cols=exg_cols,
-    #     num_spt=spt_params["num_spt"],
-    #     spt_dict=spt_dict,
-    #     max_dist_th=spt_params["max_dist_th"]
-    # )
-    end_time = time.time()
-    print(f'Spatial augmentation execution time: {end_time - start_time:.2f} seconds')
-
-    x_array = x_array[mask]
-    y_array = y_array[mask]
-    time_array = time_array[mask]
-    dist_x_array = dist_x_array[mask]
-    dist_y_array = dist_y_array[mask]
-    id_array = id_array[mask]
-    print(f'Num of records after spatial augmentation: {len(x_array)}')
-    # y_array = np.concatenate([y_array, y_spt_array], axis=1)
-
-    # Filter data before
-    x_array, y_array, time_array, dist_x_array, dist_y_array, id_array, spt_array = filter_data(
-        x_array=x_array,
-        y_array=y_array,
-        time_array=time_array,
-        dist_x_array=dist_x_array,
-        dist_y_array=dist_y_array,
-        id_array=id_array,
-        spt_array=spt_array,
-        train_start=eval_params['train_start'],
-        max_label_th=eval_params['label_th'],
-        max_null_th=eval_params['null_th']
-    )
-    print(f'Num of records after null filter: {len(x_array)}')
-
-    exg_dict = prepare_exogenous_data(
-        exg_dict=exg_dict,
-        features=exg_params['features'] + (exg_params['features_stn'] if 'features_stn' in exg_params else []),
-        time_feats=exg_params['time_feats'],
-        # null_feat=feat_params['null_feat'],
-        # null_max_dist=feat_params['null_max_dist'],
+        max_dist_th=spt_params["max_dist_th"]
     )
 
-    exg_sliding_window_arrays_fn = {
-        'french': exg_sliding_window_arrays,
-        'adbpo': exg_sliding_window_arrays_adbpo,
-        'ushcn': exg_sliding_window_arrays
-    }[path_params['type']]
+    cols = [label_col] + exg_cols + [f"spt{s}" for s in range(num_spt)]
+    for stn in list(ts_dict.keys()):
+        if stn not in spt_dict:
+            ts_dict.pop(stn)
+            continue
 
-    # num_spt = spt_params["num_spt"]
-    # cols = [label_col] + exg_cols + [f"spt{s}" for s in range(num_spt)]
-    # for stn in list(ts_dict.keys()):
-    #     if stn not in spt_dict:
-    #         ts_dict.pop(stn)
-    #         continue
-    #
-    #     ts = ts_dict[stn]
-    #     for col in cols:
-    #         ts[f"{col}_null_dist"] = null_distance_array(ts[f"{col}_is_null"])
-    #     ts = ts.dropna(subset=cols)  # drop values that could not be forward filled
-    #     ts_dict[stn] = ts
+        ts = ts_dict[stn]
+        for col in cols:
+            ts[f"{col}_null_dist"] = null_distance_array(ts[f"{col}_is_null"])
+        ts = ts.dropna(subset=cols)  # drop values that could not be forward filled
+        ts_dict[stn] = ts
 
-    start_time = time.time()
-    exg_array, mask = exg_sliding_window_arrays_fn(
-        exg_dict_feats=exg_dict,
-        id_array=id_array,
-        time_array=time_array[:, 1],
-        num_past=ts_params['num_past'],
-        max_null_th=eval_params['null_th'],
+    x_array, exg_array, spt_array, y_array, time_array, id_array = extract_windows(
+        ts_dict=ts_dict,
+        label_col=label_col,
+        exg_cols=exg_cols,
+        num_spt=spt_params["num_spt"],
+        time_feats=feat_params["time_feats"],
+        num_past=ts_params["num_past"],
+        num_fut=ts_params["num_fut"],
+        max_null_th=eval_params["null_th"]
     )
-    # x_array, exg_array, spt_array, y_array, time_array, id_array = extract_windows(
-    #     ts_dict=ts_dict,
-    #     label_col=label_col,
-    #     exg_cols=exg_cols,
-    #     num_spt=spt_params["num_spt"],
-    #     time_feats=feat_params["time_feats"],
-    #     num_past=ts_params["num_past"],
-    #     num_fut=ts_params["num_fut"],
-    #     max_null_th=eval_params["null_th"]
-    # )
-    end_time = time.time()
-    print(f'Exogenous sliding window execution time: {end_time - start_time:.2f} seconds')
-    # Compute exogenous feature mask and time encoding max sizes
-    # exg_feature_mask = define_feature_mask(base_features=exg_params['features'], time_feats=exg_params['time_feats'])
-    # exg_time_max_sizes = get_time_max_sizes(exg_params['time_feats'])
-
-    x_array = x_array[mask]
-    y_array = y_array[mask]
-    time_array = time_array[mask]
-    dist_x_array = dist_x_array[mask]
-    dist_y_array = dist_y_array[mask]
-    id_array = id_array[mask]
-    spt_array = [arr[mask] for arr in spt_array]
-    print(f'Num of records after exogenous augmentation: {len(x_array)}')
-    # y_array = np.concatenate([y_array, y_exg_array], axis=1)
-
-    # dist_x_array = np.zeros_like(x_array[:, :, 0])
-    # dist_y_array = np.zeros_like(y_array[:, 0])
 
     res = prepare_train_test(
         x_array=x_array,
         y_array=y_array,
         time_array=time_array,
-        dist_x_array=dist_x_array,
-        dist_y_array=dist_y_array,
         id_array=id_array,
         spt_array=spt_array,
         exg_array=exg_array,
@@ -460,7 +297,6 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, keep_nan:
     # Save extra params in train test dictionary
     # Save x and exogenous array feature mask
     res['x_feat_mask'] = x_feature_mask
-    # res['exg_feat_mask'] = exg_feature_mask
 
     # Save null max size by finding the maximum between train and test if any
     arr_list = (
