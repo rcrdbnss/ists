@@ -1,15 +1,13 @@
 import os
 import pickle
 import random
-from collections import namedtuple
 from copy import deepcopy
 
 import numpy as np
 import pandas as pd
 import tensorflow as tf
 
-from ists.model.encoder import SpatialExogenousEncoder
-from pipeline import data_step, model_step, parse_params, change_params, get_scalers, get_scalers_station
+from data_step import parse_params, data_step
 
 
 def no_ablation(train_test_dict) -> dict:
@@ -18,7 +16,7 @@ def no_ablation(train_test_dict) -> dict:
 
 
 def ablation_embedder_no_feat(train_test_dict, code) -> dict:
-    for n in ['train', 'test', 'valid']:
+    for n in (['train', 'test'] + (['valid'] if train_test_dict['validation_data'] else [])):
         cond_x = [x != code for x in train_test_dict['x_feat_mask']]
         train_test_dict[f'x_{n}'] = train_test_dict[f'x_{n}'][:, :, cond_x]
         train_test_dict[f'spt_{n}'] = [x[:, :, cond_x] for x in train_test_dict[f'spt_{n}']]
@@ -28,14 +26,14 @@ def ablation_embedder_no_feat(train_test_dict, code) -> dict:
         train_test_dict[f'exg_{n}'] = [x[:, :, cond_x] for x in train_test_dict[f'exg_{n}']]
 
     train_test_dict['x_feat_mask'] = [x for x in train_test_dict['x_feat_mask'] if x != code]
-    train_test_dict['exg_feat_mask'] = [x for x in train_test_dict['exg_feat_mask'] if x != code]
+    # train_test_dict['exg_feat_mask'] = [x for x in train_test_dict['exg_feat_mask'] if x != code]
 
     if code == 1:
         train_test_dict['null_max_size'] = None
 
     if code == 2:
         train_test_dict['time_max_sizes'] = []
-        train_test_dict['exg_time_max_sizes'] = []
+        # train_test_dict['exg_time_max_sizes'] = []
 
     return train_test_dict
 
@@ -207,46 +205,170 @@ def ablation_target_only(train_test_dict) -> dict:
 
 
 def ablation_stt_2(train_test_dict) -> dict:
-    train_test_dict['params']['model_params']['encoder_cls'] = SpatialExogenousEncoder
+    train_test_dict['params']['model_params']['model_type'] = "stt2"
     return train_test_dict
 
 
 def apply_ablation_code(abl_code: str, train_test_dict):
-    suffix = None
-    if '#' in abl_code:
-        abl_code, suffix = abl_code.split('#')
+    # suffix = None
+    # if '#' in abl_code:
+    #     abl_code, suffix = abl_code.split('#')
 
     T, S, E = 'T' in abl_code, 'S' in abl_code, 'E' in abl_code
-    G = 'G' in abl_code
     n, t = 'n' in abl_code, 't' in abl_code
-    M = 'M' in abl_code
+    abl_1 = '1' in abl_code
+    abl_2 = '2' in abl_code
+    abl_3 = '3' in abl_code
+    abl_4 = '4' in abl_code
+    abl_5 = '5' in abl_code
+    abl_6 = '6' in abl_code
+    abl_7 = '7' in abl_code
+    abl_8 = '8' in abl_code
+    abl_9 = '9' in abl_code
+
+    train_test_dict['params']['model_params']['model_type'] = "sttN"
+
     if S and E:
         T = False  # no need to force the target series in anymore
+    if abl_1:
+        train_test_dict['params']['model_params']['model_type'] = "baseline"
+        n = False
+    if abl_2:
+        train_test_dict['params']['model_params']['nn_params']['do_emb'] = False
+    if abl_3:
+        train_test_dict['params']['model_params']['encoder_layer_cls'] = 'EncoderAttnMaskLayer'
+    if abl_5:
+        n = False
+    if abl_6:
+        train_test_dict['params']['model_params']['model_type'] = "baseline"
+        n = False
+        train_test_dict['params']['model_params']['nn_params']['do_emb'] = False
+    if abl_7:
+        train_test_dict['params']['model_params']['model_type'] = "baseline"
+        train_test_dict['params']['model_params']['nn_params']['do_emb'] = False
+    if abl_8:
+        train_test_dict['params']['model_params']['model_type'] = "baseline"
+    if abl_9:
+        train_test_dict['params']['model_params']['model_type'] = "emb_gru"
 
-    if M:
-        train_test_dict['params']['model_params']['nn_params']['multivar'] = True
     if not n:
         train_test_dict = ablation_embedder_no_feat(train_test_dict, 1)
-    if not t:
-        train_test_dict = ablation_embedder_no_feat(train_test_dict, 2)
+
     train_test_dict['params']['model_params']['nn_params']['do_exg'] = E
     train_test_dict['params']['model_params']['nn_params']['do_spt'] = S
     train_test_dict['params']['model_params']['nn_params']['force_target'] = T
-    train_test_dict['params']['model_params']['nn_params']['do_glb'] = G
 
-    _abl_code = (
-            ''
-            + ('E' if E else '')
-            + ('S' if S else '')
-            + ('T' if T else '')
-            + ('_G' if G else '')
-            + ('_' if n or t else '')
-            + ('n' if n else '')
-            + ('t' if t else '')
-            + ('_M' if M else '')
-            + ('\n' + suffix if suffix else '')
-    )
-    return _abl_code, train_test_dict
+    abl_code = []
+
+    _abl_code = []
+    if E: _abl_code.append('E')
+    if S: _abl_code.append('S')
+    if T: _abl_code.append('T')
+    abl_code.append(''.join(_abl_code))
+
+    _abl_code = []
+    if n: _abl_code.append('n')
+    if t: _abl_code.append('t')
+    abl_code.append(''.join(_abl_code))
+
+    if abl_1: abl_code.append('1')
+    if abl_2: abl_code.append('2')
+    if abl_3: abl_code.append('3')
+    if abl_4: abl_code.append('4')
+    if abl_5: abl_code.append('5')
+    if abl_6: abl_code.append('6')
+    if abl_7: abl_code.append('7')
+    if abl_8: abl_code.append('8')
+    if abl_9: abl_code.append('9')
+
+    abl_code = '_'.join(abl_code)
+    return abl_code, train_test_dict
+
+
+from pipeline import model_step
+
+
+def get_suffix(train_test_dict):
+    defaults = {
+        'num_layers': 1,
+        'l2_reg': 0.01,
+        'dropout_rate': 0.2,
+        'time_feats': {
+            'french': ('D',),
+            'ushcn': ('WY',),
+            'adbpo': ('M', 'WY'),
+        },
+        'epochs': 100,
+        'patience': 20,
+        'lr': {
+            'french': 0.0004, 'ushcn': 0.00004, 'adbpo': 0.0004,
+        },
+        'tf': '2.17.0',
+        'd_model': {
+            'french': 64, 'ushcn': 64, 'adbpo': 32
+        },
+        'num_heads': { 'french': 4, 'ushcn': 4, 'adbpo': 2
+        },
+        'dff': {
+            'french': 128, 'ushcn': 128, 'adbpo': 64,
+        },
+        'fff': {
+            'french': 256, 'ushcn': 256, 'adbpo': 128
+        },
+    }
+
+    dataset = train_test_dict['params']['path_params']['type']
+
+    suffix = []
+
+    num_layers = train_test_dict['params']['model_params']['nn_params']['num_layers']
+    if num_layers != defaults['num_layers']:
+        suffix.append(f'encs={num_layers}')
+
+    d_model = train_test_dict['params']['model_params']['nn_params']['d_model']
+    if d_model != defaults['d_model'][dataset]:
+        suffix.append(f'd{d_model}')
+    num_heads = train_test_dict['params']['model_params']['nn_params']['num_heads']
+    if num_heads != defaults['num_heads'][dataset]:
+        suffix.append(f'h{num_heads}')
+    dff = train_test_dict['params']['model_params']['nn_params']['dff']
+    if dff != defaults['dff'][dataset]:
+        suffix.append(f'dff{dff}')
+    fff = train_test_dict['params']['model_params']['nn_params']['fff']
+    if fff != defaults['fff'][dataset]:
+        suffix.append(f'fff{fff}')
+
+    l2_reg = train_test_dict['params']['model_params']['nn_params']['l2_reg']
+    if l2_reg != defaults['l2_reg']:
+        l2_reg = str(l2_reg).replace('0.', '')
+        suffix.append(f'reg{l2_reg}')
+
+    dropout_rate = train_test_dict['params']['model_params']['nn_params']['dropout_rate']
+    if dropout_rate != defaults['dropout_rate']:
+        dropout_rate = str(dropout_rate).replace('0.', '')
+        suffix.append(f'dro{dropout_rate}')
+
+    epochs = train_test_dict['params']['model_params']['epochs']
+    if epochs != defaults['epochs']:
+        suffix.append(f'e{epochs}')
+
+    patience = train_test_dict['params']['model_params']['patience']
+    if patience != defaults['patience']:
+        suffix.append(f'pat{patience}')
+
+    lr = train_test_dict['params']['model_params']['lr']
+    if lr != defaults['lr'][dataset]:
+        suffix.append(f'lr{lr:.0e}')
+
+    time_feats = train_test_dict['params']['prep_params']['feat_params']['time_feats']
+    time_feats = tuple(sorted(time_feats))
+    if time_feats != tuple(sorted(defaults['time_feats'][dataset])):
+        suffix.append('_'.join(time_feats))
+
+    if tf.__version__ != defaults['tf']:
+        suffix.append(f'tf{tf.__version__.replace(".", "")}')
+
+    return '_'.join(suffix)
 
 
 def ablation(
@@ -258,78 +380,47 @@ def ablation(
         ablation_encoder: bool = True,
         ablation_extra: dict = None
 ):
+    # results_path, _ = utils.uniquify(results_path)
+    # with open(results_path, 'w') as f:
+    #     f.write('')
+    # results = {}
+
     if os.path.exists(results_path):
         results = pd.read_csv(results_path, index_col=0).T.to_dict()
     else:
         results = {}
 
-    selected_model = train_test_dict['params']['model_params']['model_type'][:3].upper() #9
-
-    # ablations_mapping = {
-    #     selected_model: no_ablation,
-    # }
-    #
-    # if ablation_embedder:
-    #     ablations_mapping.update({
-    #         f'{selected_model} w/o time enc': ablation_embedder_no_time,
-    #         f'{selected_model} w/o null enc': ablation_embedder_no_null,
-    #         f'{selected_model} w/o time null enc': ablation_embedder_no_time_null,
-    #     })
-    #
-    # if ablation_encoder:
-    #     ablations_mapping.update({
-    #         'T': ablation_encoder_t,
-    #         'S': ablation_encoder_s,
-    #         'E': ablation_encoder_e,
-    #         'TE': ablation_encoder_te,
-    #         'TS': ablation_encoder_ts,
-    #         'SE': ablation_encoder_se,
-    #     })
-    #
-    # if ablation_extra:
-    #     ablations_mapping.update(ablation_extra)
-
-    # ablations_mapping = {
-    #     # selected_model: no_ablation,
-    #     # 'NO_GLB': ablation_no_global_encoder,
-    #     # 'S': ablation_encoder_s,
-    #     # 'TS': ablation_encoder_ts,
-    #     # f'{selected_model} w/o time enc': ablation_embedder_no_time,
-    #     'STT_MV': ablation_multivariate,
-    #     # 'MV_no_null': ablation_multivariate_no_null,
-    #     # 'MV_TS': ablation_multivariate_ts,
-    #     # 'MV_TE': ablation_multivariate_te,
-    #     # 'MV_NO_GLB': ablation_multivariate_no_global_encoder,
-    #     # 'MV_TS_no_null_no_GLB': ablation_multivariate_ts_no_null_no_global_encoder,
-    #     # 'STT_MV_null_sum': ablation_multivariate,
-    #     # 'STT2': ablation_stt_2,
-    # }
+    suffix = get_suffix(train_test_dict)
 
     ablations_mapping = [
-        # 'ES__G_nt_M#null_sum_norm_iqr',
-        'ES____nt#null_sum_norm_iqr',
-        # 'ES__G__t_M#norm_iqr',
-        # '_ST_G__t_M#norm_iqr',
-        # '_ST_G_nt_M#null_sum_norm_iqr',
-        # '__T___nt',
-        # '_S____nt_M',
-        # '_ST_G_nt',
-        # '_ST_G__t',
-        # '_S____nt'
+        'E_nt',
+        # 'E_t',
+        # 'E_nt_1',
+        # 'E_nt_2',
+        # 'E_nt_3',
+        # 'E_nt_4',
+        # 'E_nt_6',
+        # 'E_nt_7',
+        # 'E_nt_8',
+        # 'E_nt_9',
     ]
 
     for name in ablations_mapping:
-        # func = ablations_mapping[name]
-
         # Configure ablation test
-        # train_test_dict = func(deepcopy(train_test_dict))
-        name, train_test_dict = apply_ablation_code(name, deepcopy(train_test_dict))
+        name, _train_test_dict = apply_ablation_code(name, deepcopy(train_test_dict))
+        if suffix: name = f"{name}#{suffix}"
+        if '#' not in name:
+            name += '#'
+        name += "refactor"
+        if name.endswith('#'):
+            name = name[:-1]
 
         # Exec ablation test
-        print(f"\n{name}: {train_test_dict['params']['model_params']['model_type']}")
-        if train_test_dict['params']['model_params']['seed'] != 42:
-            name += '_seed' + str(train_test_dict['params']['model_params']['seed'])
-        results[name] = model_step(train_test_dict, train_test_dict['params']['model_params'], checkpoint_path)
+        print(f"\n{name}: {_train_test_dict['params']['model_params']['model_type']}")
+        if _train_test_dict['params']['model_params']['seed'] != 42:
+            name += '_seed' + str(_train_test_dict['params']['model_params']['seed'])
+
+        results[name] = model_step(_train_test_dict, _train_test_dict['params']['model_params'], checkpoint_path)
 
         # Save results
         pd.DataFrame(results).T.to_csv(results_path, index=True)
@@ -340,6 +431,8 @@ def ablation(
 def main():
     path_params, prep_params, eval_params, model_params = parse_params()
     # path_params = change_params(path_params, '../../data', '../../Dataset/AdbPo')
+    if model_params['cpu']:
+        tf.config.set_visible_devices([], 'GPU')
     _seed = model_params['seed']
     if _seed is not None:
         random.seed(_seed)
@@ -350,41 +443,49 @@ def main():
     data_dir = './output/pickle' + ('_seed' + str(_seed) if _seed != 42 else '')
     model_dir = './output/model' + ('_seed' + str(_seed) if _seed != 42 else '')
 
-    subset = os.path.basename(path_params['ex_filename']).replace('subset_agg_', '').replace('.csv', '')
-    nan_percentage = path_params['nan_percentage']
-    num_fut = prep_params['ts_params']['num_fut']
-
     os.makedirs(res_dir, exist_ok=True)
     os.makedirs(data_dir, exist_ok=True)
     os.makedirs(model_dir, exist_ok=True)
 
-    out_name = f"{path_params['type']}_{subset}_nan{int(nan_percentage * 10)}_nf{num_fut}"
-    print('out_name:', out_name)
+    subset = path_params['ex_filename']
+    if path_params['type'] == 'adbpo' and 'exg_w_tp_t2m' in subset:
+        subset = os.path.basename(subset).replace('exg_w_tp_t2m', 'all').replace('.pickle', '')
+    elif 'all' in subset:
+        path_params['ex_filename'] = None
+    else:
+        subset = os.path.basename(subset).replace('subset_agg_', '').replace('.csv', '')
+    nan_percentage = path_params['nan_percentage']
+    num_past = prep_params['ts_params']['num_past']
+    num_fut = prep_params['ts_params']['num_fut']
+
+    out_name = f"{path_params['type']}_{subset}_nan{int(nan_percentage * 10)}_np{num_past}_nf{num_fut}"
+    print('configuration:', out_name)
     results_path = os.path.join(res_dir, f"{out_name}.csv")
     pickle_path = os.path.join(data_dir, f"{out_name}.pickle")
     checkpoint_path = os.path.join(model_dir, f"{out_name}")
 
-    # if os.path.exists(pickle_path):
-    #     print('Loading from', pickle_path, '...', end='')
-    #     with open(pickle_path, "rb") as f:
-    #         train_test_dict = pickle.load(f)
-    #     print(' done!')
-    # else:
-    if True:
+    if os.path.exists(pickle_path) and not path_params['force_data_step']:
+        print('Loading from', pickle_path, '...', end='', flush=True)
+        with open(pickle_path, "rb") as f:
+            train_test_dict = pickle.load(f)
+        print(' done!')
+    else:
+    # if True:
         train_test_dict = data_step(
             path_params, prep_params, eval_params, keep_nan=False, scaler_type=model_params['transform_type']
         )
 
-        train_test_dict['params'] = {
-            'path_params': path_params,
-            'prep_params': prep_params,
-            'eval_params': eval_params,
-            'model_params': model_params,
-        }
         with open(pickle_path, "wb") as f:
-            print('Saving to', pickle_path, '...', end='')
+            print('Saving to', pickle_path, '...', end='', flush=True)
             pickle.dump(train_test_dict, f)
             print(' done!')
+
+    train_test_dict['params'] = {
+        'path_params': path_params,
+        'prep_params': prep_params,
+        'eval_params': eval_params,
+        'model_params': model_params,
+    }
 
     ablation(
         train_test_dict=train_test_dict,
@@ -405,4 +506,15 @@ def main():
 
 
 if __name__ == '__main__':
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus:
+        try:
+            # Currently, memory growth needs to be the same across GPUs
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            logical_gpus = tf.config.list_logical_devices('GPU')
+            print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+        except RuntimeError as e:
+            # Memory growth must be set before GPUs have been initialized
+            print(e)
     main()

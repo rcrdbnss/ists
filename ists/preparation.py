@@ -1,12 +1,10 @@
-from typing import Dict, List, Tuple, Literal, Optional, Any, Union
+from typing import Dict, List, Tuple, Literal, Optional
 
 import numpy as np
 import pandas as pd
-from numpy import ndarray, dtype, generic
-from pandas import DataFrame
 from tqdm import tqdm
 
-from .preprocessing import time_encoding
+from ists.preprocessing import time_encoding
 
 
 def reindex_ts(ts: pd.DataFrame, freq: Literal['M', 'W', 'D']):
@@ -23,7 +21,7 @@ def reindex_ts(ts: pd.DataFrame, freq: Literal['M', 'W', 'D']):
 
 def drop_first_nan_rows(df: pd.DataFrame, cols: list, reverse: bool) -> pd.DataFrame:
     def count_first_nan(s: pd.Series):
-        """ Count the number of trues/nan at the start of the series"""
+        #  Count the number of trues/nan at the start of the series
         is_nan_arr = s.values  # s.isnull().values  # Get array of booleans: True is nan; and, False is not nan
         if reverse:
             is_nan_arr = is_nan_arr[::-1]
@@ -216,8 +214,9 @@ def prepare_data(
         features: List[str],
         label_col: str,
         freq: Literal['M', 'W', 'D'] = 'D',
-        null_feat: Literal['code_bool', 'code_lin', 'bool', 'log', 'lin'] = None,
-        null_max_dist: int = None,
+        # null_feat: Literal['code_bool', 'code_lin', 'bool', 'log', 'lin'] = None,  # DEPRECATED
+        # null_max_dist: int = None,
+        null_indicator_: bool = True,
         time_feats: List[str] = None,
         with_fill: bool = True,
 ):
@@ -226,12 +225,12 @@ def prepare_data(
     features.insert(0, label_col)
 
     new_features = []
-    if null_feat:
+    if null_indicator_: # null_feat:
         new_features += ['NullFeat']
     if time_feats:
         new_features += time_feats
 
-    ts_dict_new = dict()
+    ts_dict_ = dict()
 
     # Iterate each time-series
     for k, ts in tqdm(ts_dict.items()):
@@ -239,31 +238,32 @@ def prepare_data(
         ts = ts[features].copy()
 
         # Reindex time index
-        ts_new = reindex_ts(ts, freq=freq)
+        ts = reindex_ts(ts, freq=freq)
 
-        # Drop nan label rows at the start
-        ts_new = drop_first_nan_rows(ts_new, features, reverse=False)
-        # Drop nan rows at the end
-        ts_new = drop_first_nan_rows(ts_new, [label_col], reverse=True)
+        # Drop rows at the start with at least one nan value
+        ts = drop_first_nan_rows(ts, features, reverse=False)
+        # Drop rows at the end with nan in the label column
+        ts = drop_first_nan_rows(ts, [label_col], reverse=True)
 
         # Null indicator feature
-        if null_feat:
-            ts_new['NullFeat'] = null_indicator(ts_new, method=null_feat, max_dist=null_max_dist)
-        if null_max_dist:
-            ts_new['__NULL__'] = null_indicator(ts_new, method='code_lin') # todo: serve? sovrascritto in sliding window
+        if null_indicator_: # null_feat:
+            # ts_new['NullFeat'] = null_indicator(ts_new, method=null_feat, max_dist=null_max_dist)  # DEPRECATED
+            ts['NullFeat'] = null_indicator(ts, method='code_bool', max_dist=None)
+        # if null_max_dist:
+        #     ts_new['__NULL__'] = null_indicator(ts_new, method='code_lin')  # todo: serve? sovrascritto in sliding window
 
         # Time Encoding
         if time_feats:
-            ts_new = time_encoding(ts_new, codes=time_feats)
+            ts = time_encoding(ts, codes=time_feats)
 
         # Forward fill null values
-        ts_new['__LABEL__'] = ts_new[label_col]
+        ts['__LABEL__'] = ts[label_col]
         if with_fill:
-            # ts_new[features + new_features] = ts_new[features + new_features].ffill() # todo: serve fare ffill di new_features?
-            ts_new[features] = ts_new[features].ffill()
-        ts_dict_new[k] = ts_new
+            # ts_new[features + new_features] = ts_new[features + new_features].ffill()  # todo: serve fare ffill di new_features?
+            ts[features] = ts[features].ffill()
+        ts_dict_[k] = ts
 
-    return ts_dict_new, new_features
+    return ts_dict_, new_features
 
 
 def sliding_window_arrays(
@@ -323,6 +323,7 @@ def filter_data(
     # cond 1 predicted value null distance not greater than a threshold -> dist_y_array <= max_label_th
     cond1 = dist_y_array <= max_label_th
     # cond 2 input array max null distance not greater than a threshold -> np.min(dist_x_array) <= max_null_th
+    max_null_th = max_null_th if max_null_th else float('inf')
     cond2 = np.max(dist_x_array, axis=1) <= max_null_th
     # cond 3 training start date constraint
     cond3 = (time_array[:, 0] > pd.to_datetime(train_start).date())
@@ -350,12 +351,12 @@ def prepare_train_test(
         exg_array: List[np.ndarray],
         test_start: str,
         valid_start: str,
+        spt_dict: dict
 ) -> dict:
-    # is_train = time_array[:, -1] < pd.to_datetime(test_start).date()
-    # is_test = (dist_y_array == 0) & (~is_train)
     is_train = time_array[:, -1] < pd.to_datetime(valid_start).date()
     is_valid = (dist_y_array == 0) & (time_array[:, -1] >= pd.to_datetime(valid_start).date()) & (time_array[:, -1] < pd.to_datetime(test_start).date())
     is_test = (dist_y_array == 0) & (time_array[:, -1] >= pd.to_datetime(test_start).date())
+
     res = {
         'x_train': x_array[is_train],
         'y_train': y_array[is_train],
@@ -374,6 +375,7 @@ def prepare_train_test(
         'id_test': id_array[is_test],
         'spt_test': [arr[is_test] for arr in spt_array],
         'exg_test': [arr[is_test] for arr in exg_array],
+        'spt_dict': spt_dict,
 
         'x_valid': x_array[is_valid],
         'y_valid': y_array[is_valid],
@@ -384,4 +386,5 @@ def prepare_train_test(
         'spt_valid': [arr[is_valid] for arr in spt_array],
         'exg_valid': [arr[is_valid] for arr in exg_array],
     }
+
     return res

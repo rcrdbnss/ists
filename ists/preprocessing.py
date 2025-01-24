@@ -22,7 +22,7 @@ def get_time_max_sizes(codes: List[str]) -> List[int]:
             val = 12
         elif 'WY' in codes:
             # Extract max week of the year value
-            val = 56
+            val = 53
         else:
             raise ValueError(f"Code {code} is not supported, it must be ['D', 'DW', 'WY', 'M']")
 
@@ -60,7 +60,7 @@ def time_encoding(df: pd.DataFrame, codes: List[str]) -> pd.DataFrame:
 
 
 class StandardScalerBatch(object):
-    def __init__(self, p1: float = None, p2: float = None):
+    """def __init__(self, p1: float = None, p2: float = None):
         self.mean_array = None
         self.std_array = None
         self.p1 = p1
@@ -106,11 +106,11 @@ class StandardScalerBatch(object):
 
     def fit_transform(self, x: np.ndarray) -> np.ndarray:
         self.fit(x)
-        return self.transform(x)
+        return self.transform(x)"""
 
 
 class MinMaxScalerBatch(object):
-    def __init__(self):
+    """def __init__(self):
         self.min, self.max = 0, 1
         self.max_array = None
         self.min_array = None
@@ -142,23 +142,4 @@ class MinMaxScalerBatch(object):
 
     def fit_transform(self, x: np.ndarray) -> np.ndarray:
         self.fit(x)
-        return self.transform(x)
-
-# def main():
-#     data1 = [[1, 1], [2, 0], [3, -1], [4, -2]]
-#     data1 = np.array(data1)[np.newaxis, :]
-#     data = np.vstack([data1, data1 * -1])
-#     label_data = data[:, -1, 0][:, np.newaxis]
-#
-#     transformer = MinMaxScalerBatch()
-#     transformer.fit(data)
-#     data_transformed = transformer.transform(data)
-#     data_back = transformer.inverse_transform(data_transformed)
-#     label_transformed = transformer.transform(label_data)
-#     label_back = transformer.inverse_transform(label_transformed)
-#     print('Hello World!')
-#
-#
-# if __name__ == '__main__':
-#     main()
-#     print('Hello World!')
+        return self.transform(x)"""

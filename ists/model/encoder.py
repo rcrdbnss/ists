@@ -1,4 +1,3 @@
-import numpy as np
 import tensorflow as tf
 
 
@@ -13,13 +12,13 @@ class BaseAttention(tf.keras.layers.Layer):
 class CrossAttention(BaseAttention):
     last_attn_scores = None
 
-    # noinspection PyMethodOverriding
-    def call(self, x, context, **kwargs):
+    def call(self, x, context, attention_mask=None):
         attn_output, attn_scores = self.mha(
             query=x,
             key=context,
             value=context,
-            return_attention_scores=True
+            return_attention_scores=True,
+            attention_mask=attention_mask
         )
 
         # Cache the attention scores for plotting later.
@@ -34,12 +33,13 @@ class CrossAttention(BaseAttention):
 class GlobalSelfAttention(BaseAttention):
     last_attn_scores = None
 
-    def call(self, x, **kwargs):
+    def call(self, x, attention_mask=None):
         attn_output, attn_scores = self.mha(
             query=x,
             key=x,
             value=x,
-            return_attention_scores=True
+            return_attention_scores=True,
+            attention_mask=attention_mask
         )
 
         # Cache the attention scores for plotting later.
@@ -52,11 +52,12 @@ class GlobalSelfAttention(BaseAttention):
 
 
 class FeedForward(tf.keras.layers.Layer):
-    def __init__(self, d_model, dff, activation='relu', dropout_rate=0.1):
+    def __init__(self, d_model, dff, activation='relu', dropout_rate=0.1, kernel_regularizer=None):
         super().__init__()
+
         self.seq = tf.keras.Sequential([
-            tf.keras.layers.Dense(dff, activation=activation),
-            tf.keras.layers.Dense(d_model),
+            tf.keras.layers.Dense(dff, activation=activation, kernel_regularizer=kernel_regularizer),
+            tf.keras.layers.Dense(d_model, kernel_regularizer=kernel_regularizer),
             tf.keras.layers.Dropout(dropout_rate)
         ])
         self.add = tf.keras.layers.Add()
@@ -69,24 +70,30 @@ class FeedForward(tf.keras.layers.Layer):
 
 
 class EncoderLayer(tf.keras.layers.Layer):
-    def __init__(self, *, d_model, num_heads, dff, activation='relu', dropout_rate=0.1):
+    def __init__(self, *, d_model, num_heads, dff, activation='relu', dropout_rate=0.1, l2_reg=None):
         super().__init__()
+
+        reg = {}
+        if l2_reg:
+            reg['kernel_regularizer'] = tf.keras.regularizers.l2(l2_reg)
 
         self.self_attention = GlobalSelfAttention(
             num_heads=num_heads,
             key_dim=d_model,
-            dropout=dropout_rate
+            dropout=dropout_rate,
+            **reg
         )
 
         self.ffn = FeedForward(
             d_model=d_model,
             dff=dff,
             activation=activation,
+            dropout_rate=dropout_rate, **reg
         )
         self.last_attn_scores = None
 
-    def call(self, x, **kwargs):
-        x = self.self_attention(x)
+    def call(self, x, attention_mask=None):
+        x = self.self_attention(x, attention_mask)
         self.last_attn_scores = self.self_attention.last_attn_scores
         x = self.ffn(x)
 
@@ -95,25 +102,32 @@ class EncoderLayer(tf.keras.layers.Layer):
 
 class CrossEncoderLayer(tf.keras.layers.Layer):
 
-    def __init__(self, *, d_model, num_heads, dff, activation='relu', dropout_rate=0.1):
+    def __init__(self, *, d_model, num_heads, dff, activation='relu', dropout_rate=0.1, l2_reg=None):
         super(CrossEncoderLayer, self).__init__()
+
+        reg = {}
+        if l2_reg:
+            reg['kernel_regularizer'] = tf.keras.regularizers.l2(l2_reg)
 
         self.self_attention = GlobalSelfAttention(
             num_heads=num_heads,
             key_dim=d_model,
-            dropout=dropout_rate
+            dropout=dropout_rate,
+            **reg
         )
 
         self.cross_attention = CrossAttention(
             num_heads=num_heads,
             key_dim=d_model,
-            dropout=dropout_rate)
+            dropout=dropout_rate,
+            **reg
+        )
 
-        self.ffn = FeedForward(d_model, dff, activation=activation)
+        self.ffn = FeedForward(d_model, dff, activation=activation,
+                               dropout_rate=dropout_rate, **reg)
         self.last_attn_scores = None
 
-    # noinspection PyMethodOverriding
-    def call(self, x, context, **kwargs):
+    def call(self, x, context):
         x = self.self_attention(x=x)
         x = self.cross_attention(x=x, context=context)
 
@@ -124,143 +138,53 @@ class CrossEncoderLayer(tf.keras.layers.Layer):
         return x
 
 
-class ContextualEncoderLayer(tf.keras.layers.Layer):
+class EncoderAttnMaskLayer(tf.keras.layers.Layer):
 
-    def __init__(self, *, d_model, num_heads, dff, activation='relu', dropout_rate=0.1):
+    def __init__(self, *, d_model, num_heads, dff, activation='relu', dropout_rate=0.1, l2_reg=None):
         super().__init__()
-        self.ctx_encoder = EncoderLayer(
+
+        # reg = {}
+        # if l2_reg:
+        #     reg['kernel_regularizer'] = tf.keras.regularizers.l2(l2_reg)
+        #
+        # self.self_attention = GlobalSelfAttention(
+        #     num_heads=num_heads,
+        #     key_dim=d_model,
+        #     dropout=dropout_rate,
+        #     **reg
+        # )
+        #
+        # self.ffn = FeedForward(
+        #     d_model=d_model,
+        #     dff=dff,
+        #     activation=activation,
+        #     dropout_rate=dropout_rate, **reg
+        # )
+        self.encoder = EncoderLayer(
             d_model=d_model,
             num_heads=num_heads,
             dff=dff,
-            dropout_rate=dropout_rate,
             activation=activation,
+            dropout_rate=dropout_rate,
+            l2_reg=l2_reg
         )
 
-        self.cross_encoder = CrossEncoderLayer(
-            d_model=d_model,
-            num_heads=num_heads,
-            dff=dff,
-            dropout_rate=dropout_rate,
-            activation=activation,
-        )
-
-    def call(self, x, context):
-        context = self.ctx_encoder(x=context)
-        x = self.cross_encoder(x=x, context=context)
-        return x, context
-
-
-class SpatialExogenousEncoder(tf.keras.layers.Layer):
-
-    def __init__(self, *, d_model, num_heads, dff, activation='relu', num_layers=1, dropout_rate=0.1, **kwargs):
-        super().__init__()
-        self.num_layers = num_layers
-        self.exg_encs = [ContextualEncoderLayer(
-            d_model=d_model, num_heads=num_heads, dff=dff, activation=activation, dropout_rate=dropout_rate
-        ) for _ in range(num_layers)]
-        self.spt_encs = [ContextualEncoderLayer(
-            d_model=d_model, num_heads=num_heads, dff=dff, activation=activation, dropout_rate=dropout_rate
-        ) for _ in range(num_layers)]
-        self.glb_encs = [EncoderLayer(
-            d_model=d_model, num_heads=num_heads, dff=dff, activation=activation, dropout_rate=dropout_rate
-        ) for _ in range(num_layers)]
-
-    def call(self, __inputs):
-        exg_inputs, spt_inputs = __inputs
-        exg_x, exg_ctx = exg_inputs[0], exg_inputs
-        spt_x, spt_ctx = spt_inputs[0], spt_inputs
-        exg_ctx, spt_ctx = tf.concat(exg_ctx, axis=1), tf.concat(spt_ctx, axis=1)
-        for i in range(self.num_layers):
-            exg_x, exg_ctx = self.exg_encs[i](exg_x, exg_ctx)
-            spt_x, spt_ctx = self.spt_encs[i](spt_x, spt_ctx)
-            x = tf.concat([exg_x, spt_x], axis=1)
-            x = self.glb_encs[i](x)
-            exg_x, spt_x = tf.split(x, [exg_x.shape[1], spt_x.shape[1]], axis=1)
-        return exg_x, spt_x
-
-
-class GlobalEncoderLayer(tf.keras.layers.Layer):
-
-    def __init__(self, *, d_model, num_heads, dff, activation='relu', num_layers=1, dropout_rate=0.1,
-                 do_exg=False, do_spt=True, do_glb=True, force_target=True,
-                 ):
-        super(GlobalEncoderLayer, self).__init__()
-
-        self.num_layers = num_layers
-
-        self.spatial_encoders = [
-            EncoderLayer(
-                d_model=d_model,
-                num_heads=num_heads,
-                dff=dff,
-                dropout_rate=dropout_rate,
-                activation=activation,
-            )
-            for _ in range(self.num_layers)
-        ] if do_spt or force_target else [lambda x: x for _ in range(self.num_layers)]
-
-        self.exogenous_encoders = [
-            EncoderLayer(
-                d_model=d_model,
-                num_heads=num_heads,
-                dff=dff,
-                dropout_rate=dropout_rate,
-                activation=activation,
-            )
-            for _ in range(self.num_layers)
-        ] if do_exg or force_target else [lambda x: x for _ in range(self.num_layers)]
-
-        if force_target and not do_exg and not do_spt:
-            self.exogenous_encoders = [lambda x: x for _ in range(self.num_layers)]
-
-        self.global_encoders = [
-            EncoderLayer(
-                d_model=d_model,
-                num_heads=num_heads,
-                dff=dff,
-                dropout_rate=dropout_rate,
-                activation=activation,
-            )
-            for _ in range(self.num_layers)
-        ] if do_glb else [lambda x: x for _ in range(self.num_layers)]
-
-        # self.last_attn_scores = None
-
-    def call(self, x, **kwargs):
-        exg_x, spt_x = x
-
-        for i in range(self.num_layers):
-            exg_x = self.exogenous_encoders[i](exg_x)
-            spt_x = self.spatial_encoders[i](spt_x)
-
-            x = tf.concat([exg_x, spt_x], axis=1)
-            x = self.global_encoders[i](x)
-            exg_x, spt_x = tf.split(x, [exg_x.shape[1], spt_x.shape[1]], axis=1)
-
-        return exg_x, spt_x
+    def call(self, x, attn_mask=None):  # x: (v, b, t, e) attn_mask: (v, b, t)
+        shape = tf.shape(x)
+        v, b, t, e = shape[0], shape[1], shape[2], shape[3]
+        x = tf.transpose(x, perm=[1, 0, 2, 3])  # x: (b, v, t, e)
+        x = tf.reshape(x, (b, v * t, e))  # x: (b, v*t, e)
+        if attn_mask is not None:
+            attn_mask = tf.transpose(attn_mask, perm=[1, 0, 2])  # attn_mask: (b, v, t)
+            attn_mask = tf.reshape(attn_mask, (b, v * t))  # attn_mask: (b, v*t)
+            attn_mask = tf.expand_dims(attn_mask, axis=-1) * tf.expand_dims(attn_mask, axis=1)  # attn_mask: (b, v*t, v*t)
+        # x = self.self_attention(x, attention_mask=attn_mask)
+        # x = self.ffn(x)
+        x = self.encoder(x, attn_mask)
+        x = tf.reshape(x, (b, v, t, e))  # x: (b, v, t, e)
+        x = tf.transpose(x, perm=[1, 0, 2, 3])  # x: (v, b, t, e)
+        return x
 
 
 if __name__ == '__main__':
-    # Input
-    data1 = np.random.randn(64, 96, 64).astype(np.float32)
-    data2 = np.random.randn(64, 480, 64).astype(np.float32)
-    data3 = np.random.randn(64, 240, 64).astype(np.float32)
-
-    # # EncoderLayer init & call
-    # encoder = EncoderLayer(d_model=128, num_heads=2, dff=256, dropout_rate=0.1)
-    # emb1 = encoder(data1)
-    # print(f'EncoderLayer: {data1.shape} {emb1.shape}')
-    #
-    # # CrossEncoderLayer init & call
-    # cross_encoder = CrossEncoderLayer(d_model=128, num_heads=2, dff=256, dropout_rate=0.1)
-    # emb2 = cross_encoder(data2, emb1)
-    # print(f'CrossEncoderLayer: {data2.shape} {emb2.shape}')
-
-    # CrossEncoderLayer init & call
-    global_encoder = GlobalEncoderLayer(d_model=128, num_heads=2, dff=256, dropout_rate=0.1)
-    emb2, emb3 = global_encoder((data2, data3))
-    # print(f'GlobalEncoderLayer Temporal:  {data1.shape} {emb1.shape}')
-    print(f'GlobalEncoderLayer Exogenous: {data2.shape} {emb2.shape}' if emb2 is not None else 'No Exogenous')
-    print(f'GlobalEncoderLayer Spatial:   {data3.shape} {emb3.shape}')
-
     print('Hello World!')

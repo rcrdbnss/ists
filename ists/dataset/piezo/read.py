@@ -7,8 +7,10 @@ import pandas as pd
 from sklearn.metrics import pairwise_distances
 from sklearn.metrics.pairwise import haversine_distances
 from pyproj import Transformer
+from sklearn.preprocessing import StandardScaler
+from tqdm import tqdm
 
-from ..utils import move_to_end_of_week_or_month, insert_null_values
+from ..utils import move_to_end_of_week_or_month, insert_nulls_max_consecutive_thr
 
 
 class ContextType(TypedDict):
@@ -21,8 +23,10 @@ def create_ts_dict(df: pd.DataFrame, id_col: str, date_col: str, cols: List[str]
     df = df[[id_col, date_col] + cols]
 
     # Create a dictionary where for each id is associated its time-series
-    ts_dict: Dict[str, pd.DataFrame] = dict(list(df.groupby(id_col)))
-    for k, df_k in ts_dict.items():
+    # ts_dict: Dict[str, pd.DataFrame] = dict(list(df.groupby(id_col)))
+    # for k, df_k in ts_dict.items():
+    ts_dict = dict()
+    for k, df_k in df.groupby(id_col):
         # Sort dates in ascending order
         df_k = df_k.sort_values(date_col, ascending=True)
         # Drop duplicated dates
@@ -54,7 +58,7 @@ def read_piezo(filename: str, id_col: str, date_col: str, cols: List[str]) -> Di
     return ts_dict
 
 
-def read_context(filename: str, id_col: str, x_col: str, y_col: str) -> Dict[str, ContextType]:
+def read_context(filename: str, id_col: str, x_col: str, y_col: str, *cols) -> Dict[str, ContextType]:
     """ Read table in filename and extract context values """
     # Read excel or csv with context values
     if filename.endswith('.csv'):
@@ -63,10 +67,15 @@ def read_context(filename: str, id_col: str, x_col: str, y_col: str) -> Dict[str
         df = pd.read_excel(filename)
 
     # Create a dict with x and y coordinates for each id
-    res = {
-        row[id_col]: {'x': row[x_col], 'y': row[y_col]}
-        for _, row in df.iterrows()
-    }
+    # res = {
+    #     row[id_col]: {'x': row[x_col], 'y': row[y_col]}
+    #     for _, row in df.iterrows()
+    # }
+    res = df[[id_col, x_col, y_col, *cols]]
+    res = res.rename(columns={x_col: 'x', y_col: 'y'})
+    if res.shape[0] != res[id_col].nunique():
+        res = res.drop_duplicates(id_col)
+    res = res.set_index(id_col).to_dict('index')
     return res
 
 
@@ -151,25 +160,52 @@ def create_spatial_matrix(coords_dict: Dict[str, ContextType], with_haversine: b
         dist_matrix = haversine_distances(xy_data)
 
     dist_matrix = pd.DataFrame(dist_matrix, columns=ids, index=ids)
+
+    return dist_matrix
+
+
+def _create_spatial_matrix(coords_dict: Dict[str, ContextType], with_haversine: bool = False) -> pd.DataFrame:
+    """ Create the spatial matrix """
+    # Extract coordinates and IDs
+    ids = list(coords_dict.keys())
+    xy_data = np.array([[v['x'], v['y']] for v in coords_dict.values()])
+
+    if with_haversine:
+        xy_data = np.radians(xy_data)
+        dist_matrix = haversine_distances(xy_data)
+    else:
+        dist_matrix = pairwise_distances(xy_data)
+
+    dist_matrix = pd.DataFrame(dist_matrix, columns=ids, index=ids)
+
     return dist_matrix
 
 
 def load_piezo_data(
         ts_filename: str,
+        ts_cols: List[str],
+        exg_cols: List[str],
         context_filename: str,
         ex_filename: str,
-        nan_percentage: float = 0
+        nan_percentage: float = 0,
+        exg_cols_stn: List[str] = None,
+        exg_cols_stn_scaler: str = 'standard',
+        min_length = 0
 ) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], Dict[str, pd.Series]]:
     # Read irregular piezo time series
-    ts_dict = read_piezo(ts_filename, id_col='Codice WISE stazione', date_col='Data', cols=['Piezometria (m)'])
+    ts_dict = read_piezo(
+        ts_filename,
+        id_col='Codice WISE stazione',
+        date_col='Data',
+        cols=ts_cols
+    )
 
-    # Loop through the time-series and insert NaN values at the random indices
-    if nan_percentage > 0:
-        ts_dict = {k: insert_null_values(ts, nan_percentage, cols=['p']) for k, ts in ts_dict.items()}
+    # Filter based on a minimum length
+    ts_dict = {k: ts for k, ts in ts_dict.items() if len(ts) >= min_length}
 
     # Read time series context (i.e. coordinates)
-    ctx_dict = read_context(context_filename, id_col='Codice WISE stazione', x_col='X EPSG:3035',
-                            y_col='Y EPSG:3035')
+    if not exg_cols_stn: exg_cols_stn = []
+    ctx_dict = read_context(context_filename, 'Codice WISE stazione', 'X EPSG:3035', 'Y EPSG:3035', 'Codice WISE GWB', *exg_cols_stn)
 
     # Remove time series without context information
     keys = list(ts_dict.keys())
@@ -186,16 +222,83 @@ def load_piezo_data(
 
     # Read all exogenous series
     exg_dict = read_exogenous_series(ex_filename)
+    # Filter based on a minimum length
+    exg_dict = {k: v for k, v in exg_dict.items() if len(v) >= min_length}
     # Link exogenous series with each irregular time series
     exg_dict = link_exogenous_series(exg_dict, ctx_dict)
+
+    if exg_cols_stn:
+        exg_cols_stn = {col: [] for col in exg_cols_stn}
+        for col, data in exg_cols_stn.items():
+            for stn in exg_dict.keys():
+                data.append(ctx_dict[stn][col])
+
+        if exg_cols_stn_scaler == 'standard':
+            Scaler = StandardScaler
+        # elif exg_cols_stn_scaler == 'minmax':
+        #     Scaler = MinMaxScaler
+        for col, data in exg_cols_stn.items():
+            scaler = Scaler()
+            scaler.fit(np.reshape(data, (-1, 1)))
+            for stn in exg_dict.keys():
+                exg_dict[stn][col] = scaler.transform([[ctx_dict[stn][col]]])[0, 0]
+
     # Create distance matrix for each pair of irregular time series
     dist_matrix = create_spatial_matrix(ctx_dict, with_haversine=False)
+    for k1, dt1 in tqdm(ctx_dict.items(), desc='Grouping stations by water body'):
+        for k2, dt2 in ctx_dict.items():
+            if k1 < k2:
+                if dt1['Codice WISE GWB'] != dt2['Codice WISE GWB']:
+                    dist_matrix.loc[k1, k2] = np.inf
+                    dist_matrix.loc[k2, k1] = np.inf
+
     spt_dict = {}
     for k in ts_dict.keys():
         dists = dist_matrix.loc[k]
         dists = dists.drop(k)
+        dists = dists[dists < np.inf]
         dists = dists.sort_values(ascending=True)
         spt_dict[k] = dists
 
-    # exg_dict = {}
+    print(f"Null values in the dataset")
+    nan, tot = 0, 0
+    for stn in ts_dict:
+        for col in ts_cols:
+            nan += ts_dict[stn][col].isnull().sum()
+            tot += len(ts_dict[stn][col])
+    print(f"  - Target: {nan}/{tot} ({nan / tot:.2%})")
+    nan, tot = 0, 0
+    for stn in exg_dict:
+        for col in exg_cols:
+            nan += exg_dict[stn][col].isnull().sum()
+            tot += len(exg_dict[stn][col])
+    print(f"  - Context: {nan}/{tot} ({nan / tot:.2%})")
+
+    # Loop through the time-series and insert NaN values at random indices
+    if nan_percentage > 0:
+        print('Null values after injection')
+        nan, tot = 0, 0
+        for stn in tqdm(ts_dict, desc='Injecting null values'):
+            # ts = insert_null_values(ts_dict[stn], nan_percentage, ts_cols)
+            # ts_dict[stn] = ts
+            # nan += ts.isnull().sum().sum()
+            # tot += len(ts)
+            for col in ts_cols:
+                ts_dict[stn][col] = insert_nulls_max_consecutive_thr(ts_dict[stn][col], nan_percentage, 12)
+                nan += ts_dict[stn][col].isnull().sum()
+                tot += len(ts_dict[stn][col])
+        print(f'  - Target : {nan}/{tot} ({nan / tot:.2%})')
+
+        nan, tot = 0, 0
+        for stn in tqdm(exg_dict, desc='Injecting null values'):
+            # ts = insert_null_values(exg_dict[stn], nan_percentage, exg_cols)
+            # exg_dict[stn] = ts
+            # nan += ts.isnull().sum().sum()
+            # tot += ts.size
+            for col in exg_cols:
+                exg_dict[stn][col] = insert_nulls_max_consecutive_thr(exg_dict[stn][col], nan_percentage, 12)
+                nan += exg_dict[stn][col].isnull().sum()
+                tot += len(exg_dict[stn][col])
+        print(f'  - Context: {nan}/{tot} ({nan / tot:.2%})')
+
     return ts_dict, exg_dict, spt_dict

@@ -1,11 +1,13 @@
 from typing import Dict, List, Tuple
-from datetime import datetime, timedelta
 
 import pandas as pd
+from sklearn.metrics import pairwise_distances
+from sklearn.metrics.pairwise import haversine_distances
+from tqdm import tqdm
 
-from ..piezo.read import ContextType, create_ts_dict, create_spatial_matrix
+from ..piezo.read import ContextType, create_ts_dict
+from ..utils import insert_nulls_max_consecutive_thr, insert_null_values
 from ...preparation import reindex_ts
-from ..utils import insert_null_values
 
 
 def read_ushcn(filename: str, id_col: str, date_col: str, cols: List[str]) -> Dict[str, pd.DataFrame]:
@@ -13,7 +15,7 @@ def read_ushcn(filename: str, id_col: str, date_col: str, cols: List[str]) -> Di
     df = pd.read_csv(filename)
 
     # Transform timestamp column into datetime object
-    df[date_col] = df[date_col].apply(lambda x: timedelta(days=x) + datetime(year=1950, month=1, day=1))
+    # df[date_col] = df[date_col].apply(lambda x: timedelta(days=x) + datetime(year=1950, month=1, day=1))
     df[date_col] = pd.to_datetime(df[date_col]).dt.date
 
     # Split time-series based on date_col and keep only the selected cols
@@ -48,38 +50,44 @@ def extract_ushcn_context(filename: str, id_col: str, x_col: str, y_col: str) ->
 
 def load_ushcn_data(
         ts_filename: str,
+        ts_cols: List[str],
+        exg_cols: List[str],
         subset_filename: str = None,
         nan_percentage: float = 0,
+        min_length=0
 ) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], Dict[str, pd.Series]]:
-    # Read irregular ushcn time series
+
+    label_col = ts_cols[0]
+    cols = [label_col] + exg_cols
+
+    # Read irregular time series
     ts_dict = read_ushcn(
         filename=ts_filename,
-        id_col='UNIQUE_ID',
-        date_col='TIME_STAMP',
-        cols=["SNOW", "SNWD", "PRCP", "TMAX", "TMIN"],
+        id_col='COOP_ID',  # id_col='UNIQUE_ID',
+        date_col='DATE',  # date_col='TIME_STAMP',
+        cols=cols
     )
+
+    # Filter based on a minimum length
+    ts_dict = {k: ts for k, ts in ts_dict.items() if len(ts) >= min_length}
 
     # Filter based on a subset if any
     if subset_filename:
-        subset = pd.read_csv(subset_filename)['UNIQUE_ID'].to_list()
+        subset = pd.read_csv(subset_filename)['UNIQUE_ID'].to_list()  # todo:
         ts_dict = {k: ts_dict[k] for k in subset if k in ts_dict}
 
     # Extract coordinates from ushcn series
-    ctx_dict = extract_ushcn_context(filename=ts_filename, id_col='UNIQUE_ID', x_col='X', y_col='Y')
+    ctx_dict = extract_ushcn_context(
+        filename=ts_filename,
+        id_col='COOP_ID', # id_col='UNIQUE_ID',
+        x_col='X', y_col='Y'
+    )
+
+    # Remove time-series without context information
+    ts_dict = {stn: ts for stn, ts in ts_dict.items() if stn in ctx_dict}
 
     # Remove context information without time-series
-    keys = list(ctx_dict.keys())
-    for k in keys:
-        if k not in ts_dict:
-            # print(k)
-            ctx_dict.pop(k)
-
-    # Create a copy of exogenous series from the raw time-series dict
-    exg_cols = ["SNOW", "SNWD", "PRCP", "TMIN"]
-    exg_dict = {
-        k: df[exg_cols].copy()
-        for k, df in ts_dict.items()
-    }
+    ctx_dict = {stn: ctx for stn, ctx in ctx_dict.items() if stn in ts_dict}
 
     # Create distance matrix for each pair of irregular time series by computing the haversine distance
     dist_matrix = create_spatial_matrix(ctx_dict, with_haversine=True)
@@ -90,15 +98,50 @@ def load_ushcn_data(
         dists = dists.sort_values(ascending=True)
         spt_dict[k] = dists
 
+    nan, tot = 0, 0
+    for stn in ts_dict:
+        for col in cols:
+            nan += ts_dict[stn][col].isnull().sum()
+            tot += len(ts_dict[stn][col])
+    print(f"Missing values: {nan}/{tot} ({nan/tot:.2%})")
+
     # Loop through the time-series and insert NaN values at the random indices
     if nan_percentage > 0:
-        ts_dict = {
-            k: insert_null_values(ts, nan_percentage, cols=["TMAX"])
-            for k, ts in ts_dict.items()
-        }
-        exg_dict = {
-            k: insert_null_values(exg, nan_percentage, cols=exg_cols)
-            for k, exg in exg_dict.items()
-        }
+        nan, tot = 0, 0
+        for stn in tqdm(ts_dict.keys(), desc='Injecting null values'):
+            ts = insert_null_values(ts_dict[stn], nan_percentage, ts_cols)
+            ts_dict[stn] = ts
+            nan += ts.isnull().sum().sum()
+            tot += len(ts)
+            """for col in cols:
+                ts_dict[stn][col] = insert_nulls_max_consecutive_thr(ts_dict[stn][col].numpy(), nan_percentage, 12)
+                nan += ts_dict[stn][col].isnull().sum()
+                tot += len(ts_dict[stn][col])"""
+        print(f"Missing values after injection: {nan}/{tot} ({nan/tot:.2%})")
+
+    # Create a copy of exogenous series from the raw time-series dict
+    exg_dict = {}
+    for stn in ts_dict.keys():
+        ts = ts_dict[stn]
+        exg_dict[stn] = ts.loc[:, exg_cols]
+        ts_dict[stn] = ts.loc[:, ts_cols]
 
     return ts_dict, exg_dict, spt_dict
+
+
+def create_spatial_matrix(coords_dict: Dict[str, ContextType], with_haversine: bool = False) -> pd.DataFrame:
+    """ Create the spatial matrix """
+    # Read id array
+    ids = list(coords_dict.keys())
+    # Extract x and y coords for each point
+    xy_data = [{'x': val['x'], 'y': val['y']} for val in coords_dict.values()]
+    xy_data = pd.DataFrame(xy_data).values
+    if not with_haversine:
+        # Compute pairwise euclidean distances for each pair of coords
+        dist_matrix = pairwise_distances(xy_data)
+    else:
+        # Compute pairwise haversine distances for each pair of coords
+        dist_matrix = haversine_distances(xy_data)
+
+    dist_matrix = pd.DataFrame(dist_matrix, columns=ids, index=ids)
+    return dist_matrix

@@ -1,6 +1,24 @@
+import os
+
 import numpy as np
 from sklearn.base import BaseEstimator, TransformerMixin
 
+
+def uniquify(path, dir=False):
+    counter = 1
+    base_path = path
+
+    while True:
+        if dir:
+            path = f'{base_path}/{counter}'
+        else:
+            basename, ext = os.path.splitext(base_path)
+            path = f'{basename}_{counter}{ext}'
+        if not os.path.exists(path):
+            break
+        counter += 1
+
+    return path, counter
 
 class IQRMasker(BaseEstimator, TransformerMixin):
 

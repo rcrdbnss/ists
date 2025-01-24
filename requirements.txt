@@ -1,6 +1,6 @@
 numpy
 pandas
-tensorflow
+tensorflow[and-cuda]==2.14
 scikit-learn
 openpyxl
 pyproj
