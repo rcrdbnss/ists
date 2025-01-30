@@ -1,3 +1,5 @@
+import datetime
+import json
 import os
 import pickle
 import random
@@ -380,15 +382,10 @@ def ablation(
         ablation_encoder: bool = True,
         ablation_extra: dict = None
 ):
-    # results_path, _ = utils.uniquify(results_path)
-    # with open(results_path, 'w') as f:
-    #     f.write('')
-    # results = {}
-
     if os.path.exists(results_path):
         results = pd.read_csv(results_path, index_col=0).T.to_dict()
     else:
-        results = {}
+        results = {}  # todo: non-grid results
 
     suffix = get_suffix(train_test_dict)
 
@@ -407,30 +404,43 @@ def ablation(
 
     for name in ablations_mapping:
         # Configure ablation test
-        name, _train_test_dict = apply_ablation_code(name, deepcopy(train_test_dict))
+        name, D = apply_ablation_code(name, deepcopy(train_test_dict))
         if suffix: name = f"{name}#{suffix}"
         if '#' not in name:
             name += '#'
-        name += "refactor"
+        name += "_refactor"
         if name.endswith('#'):
             name = name[:-1]
 
         # Exec ablation test
-        print(f"\n{name}: {_train_test_dict['params']['model_params']['model_type']}")
-        if _train_test_dict['params']['model_params']['seed'] != 42:
-            name += '_seed' + str(_train_test_dict['params']['model_params']['seed'])
+        print(f"\n{name}: {D['params']['model_params']['model_type']}")
+        if D['params']['model_params']['seed'] != 42:
+            name += '_seed' + str(D['params']['model_params']['seed'])
 
-        results[name] = model_step(_train_test_dict, _train_test_dict['params']['model_params'], checkpoint_path)
+        """timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        checkpoint_path += "/" + timestamp
+        os.makedirs(checkpoint_path, exist_ok=True)"""
+        model_res = model_step(D, D['params']['model_params'], checkpoint_path)
+        results[name] = model_res  # todo: non-grid results
+        """model_res["name"] = name
+        model_res["params"] = D["params"]["model_params"]"""
 
         # Save results
-        pd.DataFrame(results).T.to_csv(results_path, index=True)
+        pd.DataFrame(results).T.to_csv(results_path, index=True)  # todo: non-grid results
+        """results_path = results_path.replace('.csv', '/')
+        os.makedirs(results_path, exist_ok=True)
+        results_path += timestamp + '.json'
+        with open(results_path, 'w') as f:
+            model_res["params"]["nn_params"]["null_max_size"] = int(model_res["params"]["nn_params"]["null_max_size"])
+            model_res["test_mae"] = float(model_res["test_mae"])
+            model_res["test_mse"] = float(model_res["test_mse"])
+            json.dump(model_res, f, indent=4)"""
 
-    return pd.DataFrame(results).T
+    # return pd.DataFrame(results).T
 
 
 def main():
     path_params, prep_params, eval_params, model_params = parse_params()
-    # path_params = change_params(path_params, '../../data', '../../Dataset/AdbPo')
     if model_params['cpu']:
         tf.config.set_visible_devices([], 'GPU')
     _seed = model_params['seed']
@@ -439,12 +449,12 @@ def main():
         np.random.seed(_seed)
         tf.random.set_seed(_seed)
 
-    res_dir = './output/results'
-    data_dir = './output/pickle' + ('_seed' + str(_seed) if _seed != 42 else '')
+    results_dir = './output/results'
+    pickle_dir = './output/pickle' + ('_seed' + str(_seed) if _seed != 42 else '')
     model_dir = './output/model' + ('_seed' + str(_seed) if _seed != 42 else '')
 
-    os.makedirs(res_dir, exist_ok=True)
-    os.makedirs(data_dir, exist_ok=True)
+    os.makedirs(results_dir, exist_ok=True)
+    os.makedirs(pickle_dir, exist_ok=True)
     os.makedirs(model_dir, exist_ok=True)
 
     subset = path_params['ex_filename']
@@ -458,15 +468,15 @@ def main():
     num_past = prep_params['ts_params']['num_past']
     num_fut = prep_params['ts_params']['num_fut']
 
-    out_name = f"{path_params['type']}_{subset}_nan{int(nan_percentage * 10)}_np{num_past}_nf{num_fut}"
-    print('configuration:', out_name)
-    results_path = os.path.join(res_dir, f"{out_name}.csv")
-    pickle_path = os.path.join(data_dir, f"{out_name}.pickle")
-    checkpoint_path = os.path.join(model_dir, f"{out_name}")
+    conf_name = f"{path_params['type']}_{subset}_nan{int(nan_percentage * 10)}_np{num_past}_nf{num_fut}"
+    print('configuration:', conf_name)
+    results_file = os.path.join(results_dir, f"{conf_name}.csv")
+    pickle_file = os.path.join(pickle_dir, f"{conf_name}.pickle")
+    checkpoint_dir = os.path.join(model_dir, conf_name)
 
-    if os.path.exists(pickle_path) and not path_params['force_data_step']:
-        print('Loading from', pickle_path, '...', end='', flush=True)
-        with open(pickle_path, "rb") as f:
+    if os.path.exists(pickle_file) and not path_params['force_data_step']:
+        print('Loading from', pickle_file, '...', end='', flush=True)
+        with open(pickle_file, "rb") as f:
             train_test_dict = pickle.load(f)
         print(' done!')
     else:
@@ -475,8 +485,8 @@ def main():
             path_params, prep_params, eval_params, keep_nan=False, scaler_type=model_params['transform_type']
         )
 
-        with open(pickle_path, "wb") as f:
-            print('Saving to', pickle_path, '...', end='', flush=True)
+        with open(pickle_file, "wb") as f:
+            print('Saving to', pickle_file, '...', end='', flush=True)
             pickle.dump(train_test_dict, f)
             print(' done!')
 
@@ -489,9 +499,9 @@ def main():
 
     ablation(
         train_test_dict=train_test_dict,
-        results_path=results_path,
-        pickle_path=pickle_path,
-        checkpoint_path=checkpoint_path,
+        results_path=results_file,
+        pickle_path=pickle_file,
+        checkpoint_path=checkpoint_dir,
         ablation_embedder=True,
         ablation_encoder=True,
         ablation_extra={
