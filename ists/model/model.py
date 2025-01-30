@@ -164,10 +164,11 @@ class STTransformerSequentialAttnMask(tf.keras.Model):
 
         x, x_attn_mask = self.split_data_attn_mask(x)
         exg_x, exg_attn_mask = list(zip(*[self.split_data_attn_mask(e) for e in tf.unstack(exg_x)]))
-        # spt_x, spt_attn_mask = list(zip(*[self.split_data_attn_mask(s) for s in tf.unstack(spt_x)])) if tf.shape(spt_x)[0] > 0 else [], [None]
+        # spt_x, spt_attn_mask = list(zip(*[self.split_data_attn_mask(s) for s in tf.unstack(spt_x)]))
         spt_x = tf.unstack(spt_x)
+        if not self.do_spt:
+            spt_x = []
         spt_x, spt_attn_mask = (
-            # ([], [None]) if (not self.do_spt) or (len(spt_x) == 0)
             ([], [None]) if (len(spt_x) == 0)
             else tuple(zip(*[self.split_data_attn_mask(s) for s in spt_x]))
         )
@@ -340,6 +341,8 @@ class FinalLayersGRU(tf.keras.layers.Layer):
             tf.keras.layers.Dropout(dropout_rate),
             tf.keras.layers.Dense(fff, activation='gelu', kernel_regularizer=l2_reg),
             tf.keras.layers.Dropout(dropout_rate),
+            # tf.keras.layers.Dense(64, activation='gelu', kernel_regularizer=l2_reg),
+            # tf.keras.layers.Dropout(dropout_rate),
             tf.keras.layers.Dense(1, activation='linear')
         ])
 

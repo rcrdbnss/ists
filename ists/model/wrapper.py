@@ -427,7 +427,7 @@ class ModelWrapper(object):
                 patience=early_stop_patience,
                 mode='min',
                 verbose=1,
-                restore_best_weights=True,
+                restore_best_weights=False,
                 start_from_epoch=0
             )
             callbacks.append(early_stopping)
