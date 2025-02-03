@@ -184,7 +184,7 @@ def mae_multivar_ignore_nan(y_true, y_pred):
 
 
 class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule, ABC):
-    def __init__(self, d_model, warmup_steps=2000):
+    def __init__(self, d_model, warmup_steps=4000):
         super().__init__()
 
         self.d_model = d_model

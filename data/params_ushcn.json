@@ -1,15 +1,15 @@
 {
     "path_params": {
-        "ts_filename": "../../data/USHCN/pivot_1990_1993_thr4_normalize.csv",
+        "ts_filename": "data/USHCN/pivot_1990_1993_spatial.csv",
         "ctx_filename": "",
-        "ex_filename": "../../data/USHCN/subset_agg_th1_1.csv",
+        "ex_filename": "",
         "type": "ushcn",
         "nan_percentage": 0.5
     },
 
     "prep_params": {
         "ts_params": {
-            "label_col": "TMAX",
+            "label_col": "TAVG",
             "num_past": 48,
             "num_fut": 7,
             "freq": "D"
@@ -22,13 +22,13 @@
             "max_dist_th": 0.25
         },
         "exg_params": {
-            "features": ["SNOW", "SNWD", "PRCP", "TMIN"],
+            "features": ["SNOW", "SNWD", "PRCP", "TMIN", "TMAX"]
         }
     },
 
     "eval_params": {
         "train_start": "1990-01-01",
-        "valid-start": "1992-01-01",
+        "valid_start": "1992-01-01",
         "test_start": "1993-01-01",
         "label_th": 0,
         "null_th": 12

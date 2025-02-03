@@ -208,7 +208,6 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, keep_nan:
     feat_params = prep_params["feat_params"]
     spt_params = prep_params["spt_params"]
     exg_params = prep_params["exg_params"]
-    exg_params.pop("time_feats")
 
     label_col = ts_params["label_col"]
     exg_cols = exg_params["features"]
