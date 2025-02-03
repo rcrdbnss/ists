@@ -24,6 +24,7 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
     nn_params = model_params['nn_params']
     loss = model_params['loss']
     lr = model_params['lr']
+    warmup_steps = model_params['warmup_steps']
     epochs = model_params['epochs']
     patience = model_params['patience']
     batch_size = model_params['batch_size']
@@ -47,6 +48,7 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
         model_params=nn_params,
         loss=loss,
         lr=lr,
+        warmup_steps=warmup_steps,
         dev=train_test_dict['params']['path_params']['dev']
     )
 

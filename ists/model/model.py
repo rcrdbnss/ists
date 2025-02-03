@@ -15,11 +15,12 @@ class STTransformerSequentialAttnMask(tf.keras.Model):
             d_model,
             num_heads,
             dff,
+            gru,
             fff,
             activation='relu',
-            exg_cnn=True,
-            spt_cnn=True,
-            time_cnn=True,
+            # exg_cnn=True,
+            # spt_cnn=True,
+            # time_cnn=True,
             num_layers=1,
             dropout_rate=0.1,
             time_max_sizes=None,
@@ -40,11 +41,12 @@ class STTransformerSequentialAttnMask(tf.keras.Model):
         self.d_model = d_model
         self.num_heads = num_heads
         self.dff = dff
+        self.gru = gru
         self.fff = fff
         self.activation = activation
-        self.exg_cnn = exg_cnn
-        self.spt_cnn = spt_cnn
-        self.time_cnn = time_cnn
+        # self.exg_cnn = exg_cnn
+        # self.spt_cnn = spt_cnn
+        # self.time_cnn = time_cnn
         self.num_layers = num_layers
         self.dropout_rate = dropout_rate
         self.time_max_sizes = time_max_sizes
@@ -52,15 +54,15 @@ class STTransformerSequentialAttnMask(tf.keras.Model):
         self.encoder_layer_cls = encoder_layer_cls
         self.l2_reg = l2_reg
 
-        if do_emb:
+        if self.do_emb:
             self.target_embedder = TemporalEmbedding(
-                d_model=d_model,
-                kernel_size=kernel_size,
+                d_model=self.d_model,
+                kernel_size=self.kernel_size,
                 feature_mask=self.feature_mask,
-                with_cnn=time_cnn,
-                time_max_sizes=time_max_sizes,
+                # with_cnn=self.time_cnn,
+                time_max_sizes=self.time_max_sizes,
             )
-            self.dropout = tf.keras.layers.Dropout(dropout_rate)
+            self.dropout = tf.keras.layers.Dropout(self.dropout_rate)
 
         else:
             feature_mask_selector = np.isin(self.feature_mask, [0, 1])
@@ -85,42 +87,20 @@ class STTransformerSequentialAttnMask(tf.keras.Model):
                 self.target_embedder = tf.keras.layers.Lambda(lambda x: x)
             self.dropout = tf.keras.layers.Lambda(lambda x: x)
 
-        # self.exogenous_embedder = SpatialEmbedding2(TemporalEmbedding(
-        #     d_model=d_model,
-        #     kernel_size=kernel_size,
-        #     feature_mask=self.feature_mask,
-        #     with_cnn=exg_cnn,
-        #     time_max_sizes=time_max_sizes,
-        # )) # if self.do_exg else lambda x: None # self.__dummy(d_model)
-        # if not do_emb:
-        #     del self.exogenous_embedder
-        #     self.exogenous_embedder = lambda x: tf.concat(x, axis=1)
-        #
-        # self.spatial_embedder = SpatialEmbedding2(TemporalEmbedding(
-        #     d_model=d_model,
-        #     kernel_size=kernel_size,
-        #     feature_mask=self.feature_mask,
-        #     with_cnn=spt_cnn,
-        #     time_max_sizes=time_max_sizes,
-        # )) # if self.do_spt else lambda x: None # self.__dummy(d_model)
-        # if not do_emb:
-        #     del self.spatial_embedder
-        #     self.spatial_embedder = lambda x: tf.concat(x, axis=1)
-
         self.encoder = SequentialEncoderAttnMask(
-            d_model=(d_model if do_emb else len(self.feature_mask)),
-            num_heads=num_heads,
-            dff=dff,
-            activation=activation,
-            num_layers=num_layers,
-            dropout_rate=dropout_rate,
-            do_exg=do_exg, do_spt=do_spt, force_target=force_target,
-            layer_cls=encoder_layer_cls,
-            l2_reg=l2_reg,
+            d_model=(self.d_model if self.do_emb else len(self.feature_mask)),
+            num_heads=self.num_heads,
+            dff=self.dff,
+            activation=self.activation,
+            num_layers=self.num_layers,
+            dropout_rate=self.dropout_rate,
+            do_exg=self.do_exg, do_spt=self.do_spt, force_target=self.force_target,
+            layer_cls=self.encoder_layer_cls,
+            l2_reg=self.l2_reg,
         )
 
         # self.final_layers = FinalLayersFF(fff, dropout_rate, l2_reg)
-        self.final_layers = FinalLayersGRU(fff, dropout_rate, l2_reg, gru_bidirectional=False)
+        self.final_layers = FinalLayersGRU(self.gru, self.fff, self.dropout_rate, self.l2_reg, gru_bidirectional=False)
 
 
     def get_config(self):
@@ -131,11 +111,12 @@ class STTransformerSequentialAttnMask(tf.keras.Model):
             'd_model': self.d_model,
             'num_heads': self.num_heads,
             'dff': self.dff,
+            'gru': self.gru,
             'fff': self.fff,
             'activation': self.activation,
-            'exg_cnn': self.exg_cnn,
-            'spt_cnn': self.spt_cnn,
-            'time_cnn': self.time_cnn,
+            # 'exg_cnn': self.exg_cnn,
+            # 'spt_cnn': self.spt_cnn,
+            # 'time_cnn': self.time_cnn,
             'num_layers': self.num_layers,
             'dropout_rate': self.dropout_rate,
             'time_max_sizes': self.time_max_sizes,
@@ -331,20 +312,23 @@ def FinalLayersFF(fff, dropout_rate, l2_reg):
 
 class FinalLayersGRU(tf.keras.layers.Layer):
 
-    def __init__(self, fff, dropout_rate, l2_reg, *, gru_bidirectional=False):
+    def __init__(self, gru_units, fff, dropout_rate, l2_reg, *, gru_bidirectional=False):
         super().__init__()
         l2_reg = tf.keras.regularizers.l2(l2_reg) if l2_reg else None
-        self.gru = tf.keras.layers.GRU(fff, kernel_regularizer=l2_reg, recurrent_regularizer=l2_reg)
+        self.gru = tf.keras.layers.GRU(gru_units, kernel_regularizer=l2_reg, recurrent_regularizer=l2_reg)
         if gru_bidirectional:
             self.gru = tf.keras.layers.Bidirectional(self.gru)
-        self.final_layers = tf.keras.models.Sequential([
+        final_layers = []
+        for units in fff:
+            final_layers.extend([
+                tf.keras.layers.Dropout(dropout_rate),
+                tf.keras.layers.Dense(units, activation='gelu', kernel_regularizer=l2_reg)
+            ])
+        final_layers.extend([
             tf.keras.layers.Dropout(dropout_rate),
-            tf.keras.layers.Dense(fff, activation='gelu', kernel_regularizer=l2_reg),
-            tf.keras.layers.Dropout(dropout_rate),
-            # tf.keras.layers.Dense(64, activation='gelu', kernel_regularizer=l2_reg),
-            # tf.keras.layers.Dropout(dropout_rate),
             tf.keras.layers.Dense(1, activation='linear')
         ])
+        self.final_layers = tf.keras.models.Sequential(final_layers)
 
     def call(self, x, mask=None):
         x = self.gru(x, mask=mask)

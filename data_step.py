@@ -24,10 +24,23 @@ def parse_params():
                         help='the path where the configuration is stored.')
     parser.add_argument('--dev', action='store_true', help='Run on development data')
     parser.add_argument('--cpu', action='store_true', help='Run on CPU')
-    parser.add_argument('--num-past', type=int, default=0, help='Number of past values to consider')
-    parser.add_argument('--num-fut', type=int, default=0, help='Number of future values to predict')
-    parser.add_argument('--nan-percentage', type=float, default=-1., help='Percentage of NaN values to insert')
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
+
+    parser.add_argument('--num-past', type=int, default=None, help='Number of past values to consider')
+    parser.add_argument('--num-fut', type=int, default=None, help='Number of future values to predict')
+    parser.add_argument('--nan-percentage', type=float, default=None, help='Percentage of NaN values to insert')
+
+    parser.add_argument("--d-model", type=int, default=None)
+    parser.add_argument("--num-heads", type=int, default=None)
+    parser.add_argument("--dff", type=int, default=None)
+    parser.add_argument("--gru", type=int, default=None)
+    parser.add_argument("--fff", type=int, nargs="+", default=None)
+
+    parser.add_argument("--lr", type=float, default=None, help="Learning rate")
+    parser.add_argument("--warmup-steps", type=int, default=None, help="Warmup steps for custom scheduler")
+    parser.add_argument("--l2-reg", type=float, default=None, help="L2 regularization")
+    parser.add_argument("--dropout", type=float, default=None, help="Dropout rate")
+
     parser.add_argument('--force-data-step', action='store_true', help='Force data step')
 
     args = parser.parse_args()
@@ -40,12 +53,39 @@ def parse_params():
     conf['path_params']['dev'] = args.dev
     conf['path_params']['force_data_step'] = args.force_data_step
     conf['model_params']['seed'] = args.seed
-    if args.num_past > 0:
+
+    if args.num_past is not None:
         conf['prep_params']['ts_params']['num_past'] = args.num_past
-    if args.num_fut > 0:
+    if args.num_fut is not None:
         conf['prep_params']['ts_params']['num_fut'] = args.num_fut
-    if args.nan_percentage >= 0:
+    if args.nan_percentage is not None:
         conf['path_params']['nan_percentage'] = args.nan_percentage
+
+    if args.d_model is not None:
+        conf['model_params']['nn_params']['d_model'] = args.d_model
+    if args.num_heads is not None:
+        conf['model_params']['nn_params']['num_heads'] = args.num_heads
+    if args.dff is not None:
+        conf['model_params']['nn_params']['dff'] = args.dff
+    if args.gru is not None:
+        conf['model_params']['nn_params']['gru'] = args.gru
+    if args.fff is not None:
+        fff = args.fff
+        if fff[-1] == 1:
+            fff = fff[:-1]
+        conf['model_params']['nn_params']['fff'] = fff
+
+    if args.lr is not None:
+        conf['model_params']['lr'] = args.lr
+        if args.lr > 0:
+            args.warmup_steps = None  # ignore
+    if args.warmup_steps is not None:
+        conf['model_params']['warmup_steps'] = args.warmup_steps
+    if args.l2_reg is not None:
+        conf['model_params']['nn_params']['l2_reg'] = args.l2_reg
+    if args.dropout is not None:
+        conf['model_params']['nn_params']['dropout'] = args.dropout
+
     if not conf['path_params']['ex_filename']:
         conf['path_params']['ex_filename'] = 'all'
     ex_name = conf['path_params']['ex_filename']
@@ -168,6 +208,7 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, keep_nan:
     feat_params = prep_params["feat_params"]
     spt_params = prep_params["spt_params"]
     exg_params = prep_params["exg_params"]
+    exg_params.pop("time_feats")
 
     label_col = ts_params["label_col"]
     exg_cols = exg_params["features"]
@@ -207,7 +248,7 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, keep_nan:
 
     stns_no_data = list()
     for stn, ts in ts_dict.items():
-        for f in ts_params['features']:
+        for f in [label_col]:
             ts_train = ts.loc[ts.index < train_end_excl, f]
             if ts_train.isna().all():
                 stns_no_data.append(stn)
@@ -247,6 +288,7 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, keep_nan:
     link_spatial_data_fn = {
         "french": link_spatial_data_water_body,
         "ushcn": link_spatial_data,
+        "adbpo": link_spatial_data_water_body,
     }[path_params['type']]
     ts_dict = link_spatial_data_fn(
         ts_dict=ts_dict,

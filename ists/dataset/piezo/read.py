@@ -7,10 +7,11 @@ import pandas as pd
 from sklearn.metrics import pairwise_distances
 from sklearn.metrics.pairwise import haversine_distances
 from pyproj import Transformer
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from tqdm import tqdm
 
 from ..utils import move_to_end_of_week_or_month, insert_nulls_max_consecutive_thr
+from ...spatial import find_last_date_idx
 
 
 class ContextType(TypedDict):
@@ -170,8 +171,13 @@ def load_piezo_data(
         nan_percentage: float = 0,
         exg_cols_stn: List[str] = None,
         exg_cols_stn_scaler: str = 'standard',
-        min_length = 0
+        min_length = 0,
+        max_null_th = float('inf')
 ) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], Dict[str, pd.Series]]:
+
+    label_col = ts_cols[0]
+    cols = [label_col] + exg_cols
+
     # Read irregular piezo time series
     ts_dict = read_piezo(
         ts_filename,
@@ -207,30 +213,38 @@ def load_piezo_data(
     # Link exogenous series with each irregular time series
     exg_dict = link_exogenous_series(exg_dict, ctx_dict)
 
-    if exg_cols_stn:
-        exg_cols_stn = {col: [] for col in exg_cols_stn}
-        for col, data in exg_cols_stn.items():
-            for stn in exg_dict.keys():
-                data.append(ctx_dict[stn][col])
-
-        if exg_cols_stn_scaler == 'standard':
-            Scaler = StandardScaler
-        # elif exg_cols_stn_scaler == 'minmax':
-        #     Scaler = MinMaxScaler
-        for col, data in exg_cols_stn.items():
-            scaler = Scaler()
-            scaler.fit(np.reshape(data, (-1, 1)))
-            for stn in exg_dict.keys():
-                exg_dict[stn][col] = scaler.transform([[ctx_dict[stn][col]]])[0, 0]
+    for stn, ts in tqdm(ts_dict.items(), desc='Linking exogenous series with time series'):
+        exg_ts = exg_dict[stn]
+        for date_ in ts.index:
+            i = find_last_date_idx(exg_ts, date=date_)
+            if i == -1:
+                ts.drop(date_, inplace=True)
+                continue
+            else:
+                ts.loc[date_, exg_cols] = exg_ts.iloc[i][exg_cols]
+                continue
 
     # Create distance matrix for each pair of irregular time series
     dist_matrix = create_spatial_matrix(ctx_dict, with_haversine=False)
-    for k1, dt1 in tqdm(ctx_dict.items(), desc='Grouping stations by water body'):
+    """for k1, dt1 in tqdm(ctx_dict.items(), desc='Grouping stations by water body'):
         for k2, dt2 in ctx_dict.items():
             if k1 < k2:
                 if dt1['Codice WISE GWB'] != dt2['Codice WISE GWB']:
                     dist_matrix.loc[k1, k2] = np.inf
-                    dist_matrix.loc[k2, k1] = np.inf
+                    dist_matrix.loc[k2, k1] = np.inf"""
+    # Optimized version with numpy
+    stations = list(ctx_dict.keys())
+    num_stations = len(stations)
+    dist_matrix = dist_matrix.to_numpy()
+    water_bodies = [ctx_dict[stn]['Codice WISE GWB'] for stn in stations]
+
+    # Iterate over pairs of stations to update the distance matrix
+    for i in tqdm(range(num_stations), desc='Grouping stations by water body'):
+        for j in range(i + 1, num_stations):
+            if water_bodies[i] != water_bodies[j]:
+                dist_matrix[i, j] = np.inf
+                dist_matrix[j, i] = np.inf
+    dist_matrix = pd.DataFrame(dist_matrix, columns=stations, index=stations)
 
     spt_dict = {}
     for k in ts_dict.keys():
@@ -240,45 +254,38 @@ def load_piezo_data(
         dists = dists.sort_values(ascending=True)
         spt_dict[k] = dists
 
-    print(f"Null values in the dataset")
     nan, tot = 0, 0
     for stn in ts_dict:
-        for col in ts_cols:
+        for col in cols:
             nan += ts_dict[stn][col].isnull().sum()
             tot += len(ts_dict[stn][col])
-    print(f"  - Target: {nan}/{tot} ({nan / tot:.2%})")
-    nan, tot = 0, 0
-    for stn in exg_dict:
-        for col in exg_cols:
-            nan += exg_dict[stn][col].isnull().sum()
-            tot += len(exg_dict[stn][col])
-    print(f"  - Context: {nan}/{tot} ({nan / tot:.2%})")
+    print(f"Missing values in the dataset: {nan}/{tot} ({nan/tot:.2%})")
 
     # Loop through the time-series and insert NaN values at random indices
     if nan_percentage > 0:
-        print('Null values after injection')
         nan, tot = 0, 0
         for stn in tqdm(ts_dict, desc='Injecting null values'):
-            # ts = insert_null_values(ts_dict[stn], nan_percentage, ts_cols)
-            # ts_dict[stn] = ts
-            # nan += ts.isnull().sum().sum()
-            # tot += len(ts)
-            for col in ts_cols:
-                ts_dict[stn][col] = insert_nulls_max_consecutive_thr(ts_dict[stn][col], nan_percentage, 12)
+            for col in cols:
+                ts_dict[stn][col] = insert_nulls_max_consecutive_thr(ts_dict[stn][col].to_numpy(), nan_percentage, max_null_th)
                 nan += ts_dict[stn][col].isnull().sum()
                 tot += len(ts_dict[stn][col])
-        print(f'  - Target : {nan}/{tot} ({nan / tot:.2%})')
+    print(f"Missing values in the dataset: {nan}/{tot} ({nan/tot:.2%})")
 
-        nan, tot = 0, 0
-        for stn in tqdm(exg_dict, desc='Injecting null values'):
-            # ts = insert_null_values(exg_dict[stn], nan_percentage, exg_cols)
-            # exg_dict[stn] = ts
-            # nan += ts.isnull().sum().sum()
-            # tot += ts.size
-            for col in exg_cols:
-                exg_dict[stn][col] = insert_nulls_max_consecutive_thr(exg_dict[stn][col], nan_percentage, 12)
-                nan += exg_dict[stn][col].isnull().sum()
-                tot += len(exg_dict[stn][col])
-        print(f'  - Context: {nan}/{tot} ({nan / tot:.2%})')
+    # Station-level exogenous features, such as depth into the water body
+    if exg_cols_stn:
+        exg_cols_stn = {col: [] for col in exg_cols_stn}
+        for col, data in exg_cols_stn.items():
+            for stn in ts_dict.keys():
+                data.append(ctx_dict[stn][col])
 
-    return ts_dict, exg_dict, spt_dict
+        if exg_cols_stn_scaler == 'standard':
+            Scaler = StandardScaler
+        elif exg_cols_stn_scaler == 'minmax':
+            Scaler = MinMaxScaler
+        for col, data in exg_cols_stn.items():
+            scaler = Scaler()
+            scaler.fit(np.reshape(data, (-1, 1)))
+            for stn in exg_dict.keys():
+                ts_dict[stn][col] = scaler.transform([[ctx_dict[stn][col]]])[0, 0]
+
+    return ts_dict, spt_dict

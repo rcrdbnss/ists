@@ -68,9 +68,10 @@ class BaselineModel(tf.keras.Model):
                  d_model,
                  num_heads,
                  dff,
+                 gru,
                  fff,
                  activation='relu',
-                 time_cnn=True,
+                 # time_cnn=True,
                  num_layers=1,
                  dropout_rate=0.1,
                  time_max_sizes=None,
@@ -78,6 +79,20 @@ class BaselineModel(tf.keras.Model):
                  do_exg=True, do_spt=True, do_emb=True,
                  **kwargs):
         super().__init__()
+
+        self.kernel_size = kernel_size
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.dff = dff
+        self.gru = gru
+        self.fff = fff
+        self.activation = activation
+        self.num_layers = num_layers
+        self.dropout_rate = dropout_rate
+        self.time_max_sizes = time_max_sizes
+        self.l2_reg = l2_reg
+        self.do_exg, self.do_spt, self.do_emb = do_exg, do_spt, do_emb
+
         feature_mask = np.array(feature_mask)
         # assuming features mask for a univariate series with one or more temporal features: [0, 1, 2...]
         arg_feat, arg_null, arg_time = (feature_mask == 0), (feature_mask == 1), (feature_mask == 2)
@@ -85,31 +100,30 @@ class BaselineModel(tf.keras.Model):
         self.null_id = feature_mask_range[arg_null][0] if arg_null.any() else None
         self.feat_id = feature_mask_range[arg_feat][0]
         self.time_ids = feature_mask_range[arg_time]
-        self.do_exg, self.do_spt = do_exg, do_spt
         n_features = 1
-        if do_exg:
+        if self.do_exg:
             n_features += kwargs['exg_size'] - 1
-        if do_spt:
+        if self.do_spt:
             n_features += kwargs['spatial_size'] - 1
         feature_mask = [0] * n_features
         if self.null_id is not None:
             feature_mask += [1] * kwargs['exg_size']
         feature_mask += [2] * sum(arg_time)
-        feature_mask = np.array(feature_mask)
+        self.feature_mask = np.array(feature_mask)
 
         self.encoder = EncoderVanilla(
-            d_model=d_model,
-            num_heads=num_heads,
-            dff=dff,
-            activation=activation,
-            num_layers=num_layers,
-            dropout_rate=dropout_rate,
-            l2_reg=l2_reg,
-            kernel_size=kernel_size,
-            feature_mask=feature_mask,
-            time_cnn=time_cnn,
-            time_max_sizes=time_max_sizes,
-            do_emb=do_emb,
+            d_model=self.d_model,
+            num_heads=self.num_heads,
+            dff=self.dff,
+            activation=self.activation,
+            num_layers=self.num_layers,
+            dropout_rate=self.dropout_rate,
+            l2_reg=self.l2_reg,
+            kernel_size=self.kernel_size,
+            feature_mask=self.feature_mask,
+            # time_cnn=time_cnn,
+            time_max_sizes=self.time_max_sizes,
+            do_emb=self.do_emb,
         )
 
         # reg = {}
@@ -122,7 +136,7 @@ class BaselineModel(tf.keras.Model):
         #     tf.keras.layers.Dropout(dropout_rate),
         #     tf.keras.layers.Dense(1, activation='linear')
         # ])
-        self.final_layers = FinalLayersGRU(fff, dropout_rate, l2_reg)
+        self.final_layers = FinalLayersGRU(self.gru, self.fff, self.dropout_rate, self.l2_reg)
 
     def split_data_attn_mask(self, x):
         if self.null_id is None:

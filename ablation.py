@@ -305,6 +305,7 @@ def get_suffix(train_test_dict):
         'lr': {
             'french': 0.0004, 'ushcn': 0.00004, 'adbpo': 0.0004,
         },
+        "warmup_steps": 4000,
         'tf': '2.17.0',
         'd_model': {
             'french': 64, 'ushcn': 64, 'adbpo': 32
@@ -314,8 +315,11 @@ def get_suffix(train_test_dict):
         'dff': {
             'french': 128, 'ushcn': 128, 'adbpo': 64,
         },
-        'fff': {
+        'gru': {
             'french': 256, 'ushcn': 256, 'adbpo': 128
+        },
+        'fff': {
+            'french': [256], 'ushcn': [256], 'adbpo': [128]
         },
     }
 
@@ -336,9 +340,12 @@ def get_suffix(train_test_dict):
     dff = train_test_dict['params']['model_params']['nn_params']['dff']
     if dff != defaults['dff'][dataset]:
         suffix.append(f'dff{dff}')
+    gru = train_test_dict['params']['model_params']['nn_params']['gru']
+    if gru != defaults['fff'][dataset]:
+        suffix.append(f'gru{gru}')
     fff = train_test_dict['params']['model_params']['nn_params']['fff']
     if fff != defaults['fff'][dataset]:
-        suffix.append(f'fff{fff}')
+        suffix.append(f'fff{fff.join("+")}')
 
     l2_reg = train_test_dict['params']['model_params']['nn_params']['l2_reg']
     if l2_reg != defaults['l2_reg']:
@@ -360,7 +367,14 @@ def get_suffix(train_test_dict):
 
     lr = train_test_dict['params']['model_params']['lr']
     if lr != defaults['lr'][dataset]:
-        suffix.append(f'lr{lr:.0e}')
+        if lr == 0:
+            suffix.append('lr0')
+        else:
+            suffix.append(f'lr{lr:.0e}')
+    if lr == 0:
+        warmup_steps = train_test_dict['params']['model_params']['warmup_steps']
+        if warmup_steps != defaults['warmup_steps']:
+            suffix.append(f'warm{warmup_steps}')
 
     time_feats = train_test_dict['params']['prep_params']['feat_params']['time_feats']
     time_feats = tuple(sorted(time_feats))
@@ -382,11 +396,6 @@ def ablation(
         ablation_encoder: bool = True,
         ablation_extra: dict = None
 ):
-    if os.path.exists(results_path):
-        results = pd.read_csv(results_path, index_col=0).T.to_dict()
-    else:
-        results = {}  # todo: non-grid results
-
     suffix = get_suffix(train_test_dict)
 
     ablations_mapping = [
@@ -403,7 +412,6 @@ def ablation(
     ]
 
     for name in ablations_mapping:
-        # Configure ablation test
         name, D = apply_ablation_code(name, deepcopy(train_test_dict))
         if suffix: name = f"{name}#{suffix}"
         if '#' not in name:
@@ -412,22 +420,29 @@ def ablation(
         if name.endswith('#'):
             name = name[:-1]
 
-        # Exec ablation test
         print(f"\n{name}: {D['params']['model_params']['model_type']}")
         if D['params']['model_params']['seed'] != 42:
             name += '_seed' + str(D['params']['model_params']['seed'])
 
-        """timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        """# grid results
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         checkpoint_path += "/" + timestamp
         os.makedirs(checkpoint_path, exist_ok=True)"""
-        model_res = model_step(D, D['params']['model_params'], checkpoint_path)
-        results[name] = model_res  # todo: non-grid results
-        """model_res["name"] = name
-        model_res["params"] = D["params"]["model_params"]"""
 
-        # Save results
-        pd.DataFrame(results).T.to_csv(results_path, index=True)  # todo: non-grid results
-        """results_path = results_path.replace('.csv', '/')
+        model_res = model_step(D, D['params']['model_params'], checkpoint_path)
+
+        # non-grid results
+        if os.path.exists(results_path):
+            results = pd.read_csv(results_path, index_col=0).T.to_dict()
+        else:
+            results = {}
+        results[name] = model_res
+        pd.DataFrame(results).T.to_csv(results_path, index=True)
+
+        """# grid results
+        model_res["name"] = name
+        model_res["params"] = D["params"]["model_params"]
+        results_path = results_path.replace('.csv', '/')
         os.makedirs(results_path, exist_ok=True)
         results_path += timestamp + '.json'
         with open(results_path, 'w') as f:
@@ -435,8 +450,6 @@ def ablation(
             model_res["test_mae"] = float(model_res["test_mae"])
             model_res["test_mse"] = float(model_res["test_mse"])
             json.dump(model_res, f, indent=4)"""
-
-    # return pd.DataFrame(results).T
 
 
 def main():

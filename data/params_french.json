@@ -9,7 +9,6 @@
 
     "prep_params": {
         "ts_params": {
-            "features": ["p"],
             "label_col": "p",
             "num_past": 48,
             "num_fut": 7,
@@ -24,8 +23,7 @@
         },
         "exg_params": {
             "features": ["tp", "e"],
-            "features_stn": ["prof"],
-            "time_feats": ["M", "WY"]
+            "features_stn": ["prof"]
         }
     },
 
@@ -45,13 +43,10 @@
             "d_model": 64,
             "num_heads": 4,
             "dff": 128,
-            "fff": 256,
+            "gru": 256,
+            "fff": [256],
             "activation": "relu",
-            "exg_cnn": true,
-            "spt_cnn": true,
-            "time_cnn": true,
             "num_layers": 1,
-            "with_cross": true,
             "dropout_rate": 0.2,
             "l2_reg": 0.01
         },

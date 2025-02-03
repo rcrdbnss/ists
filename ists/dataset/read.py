@@ -33,7 +33,8 @@ def load_data(
             nan_percentage=nan_percentage,
             exg_cols_stn=exg_cols_stn,
             exg_cols_stn_scaler=exg_cols_stn_scaler,
-            min_length=num_past+num_future
+            min_length=num_past+num_future,
+            max_null_th=max_null_th
         )
     elif data_type == 'french':
         return load_frenchpiezo_data(

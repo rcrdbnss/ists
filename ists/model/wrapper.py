@@ -184,7 +184,7 @@ def mae_multivar_ignore_nan(y_true, y_pred):
 
 
 class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule, ABC):
-    def __init__(self, d_model, warmup_steps=4000):
+    def __init__(self, d_model, warmup_steps=2000):
         super().__init__()
 
         self.d_model = d_model
@@ -197,7 +197,8 @@ class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule, ABC):
         arg1 = tf.math.rsqrt(step)
         arg2 = step * (self.warmup_steps ** -1.5)
 
-        return tf.math.rsqrt(self.d_model) * tf.math.minimum(arg1, arg2)
+        lrate = tf.math.rsqrt(self.d_model) * tf.math.minimum(arg1, arg2)
+        return lrate
 
     def get_config(self):
         return {
@@ -254,6 +255,7 @@ class ModelWrapper(object):
             # transform_type: str = None,
             loss: str = 'mse',
             lr: float = 0.001,
+            warmup_steps: int = None,
             best_valid: bool = True,
             dev = False
     ):
@@ -298,7 +300,9 @@ class ModelWrapper(object):
         if self.lr > 0:
             optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr)
         else:
-            learning_rate = CustomSchedule(self.d_model)
+            if warmup_steps is None:
+                warmup_steps = 4000
+            learning_rate = CustomSchedule(self.d_model, warmup_steps)
             optimizer = tf.keras.optimizers.Adam(learning_rate, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
 
         self.model.compile(
