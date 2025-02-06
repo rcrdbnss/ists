@@ -341,11 +341,11 @@ def get_suffix(train_test_dict):
     if dff != defaults['dff'][dataset]:
         suffix.append(f'dff{dff}')
     gru = train_test_dict['params']['model_params']['nn_params']['gru']
-    if gru != defaults['fff'][dataset]:
+    if gru != defaults['gru'][dataset]:
         suffix.append(f'gru{gru}')
     fff = train_test_dict['params']['model_params']['nn_params']['fff']
     if fff != defaults['fff'][dataset]:
-        suffix.append(f'fff{fff.join("+")}')
+        suffix.append(f'fff{"+".join([str(x) for x in fff])}')
 
     l2_reg = train_test_dict['params']['model_params']['nn_params']['l2_reg']
     if l2_reg != defaults['l2_reg']:
@@ -416,7 +416,7 @@ def ablation(
         if suffix: name = f"{name}#{suffix}"
         if '#' not in name:
             name += '#'
-        name += "_refactor"
+        name += "_sk16"
         if name.endswith('#'):
             name = name[:-1]
 

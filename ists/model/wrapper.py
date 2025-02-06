@@ -298,7 +298,14 @@ class ModelWrapper(object):
             os.makedirs(self.checkpoint_dir, exist_ok=True)
 
         if self.lr > 0:
-            optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr)
+            # optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr)
+            lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+                initial_learning_rate=self.lr,
+                decay_steps=16000,
+                decay_rate=0.95,
+                staircase=False
+            )
+            optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
         else:
             if warmup_steps is None:
                 warmup_steps = 4000
@@ -432,7 +439,8 @@ class ModelWrapper(object):
                 mode='min',
                 verbose=1,
                 restore_best_weights=False,
-                start_from_epoch=0
+                start_from_epoch=0,
+                min_delta=2e-4,
             )
             callbacks.append(early_stopping)
 

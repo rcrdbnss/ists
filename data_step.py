@@ -81,10 +81,12 @@ def parse_params():
             args.warmup_steps = None  # ignore
     if args.warmup_steps is not None:
         conf['model_params']['warmup_steps'] = args.warmup_steps
+    if "warmup_steps" not in conf['model_params']:
+        conf['model_params']['warmup_steps'] = None
     if args.l2_reg is not None:
         conf['model_params']['nn_params']['l2_reg'] = args.l2_reg
     if args.dropout is not None:
-        conf['model_params']['nn_params']['dropout'] = args.dropout
+        conf['model_params']['nn_params']['dropout_rate'] = args.dropout
 
     if not conf['path_params']['ex_filename']:
         conf['path_params']['ex_filename'] = 'all'
