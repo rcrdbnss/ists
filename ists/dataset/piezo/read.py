@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import TypedDict, Dict, List, Tuple
 import math
 import pickle
@@ -11,7 +12,6 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from tqdm import tqdm
 
 from ..utils import move_to_end_of_week_or_month, insert_nulls_max_consecutive_thr
-from ...spatial import find_last_date_idx
 
 
 class ContextType(TypedDict):
@@ -24,8 +24,6 @@ def create_ts_dict(df: pd.DataFrame, id_col: str, date_col: str, cols: List[str]
     df = df[[id_col, date_col] + cols]
 
     # Create a dictionary where for each id is associated its time-series
-    # ts_dict: Dict[str, pd.DataFrame] = dict(list(df.groupby(id_col)))
-    # for k, df_k in ts_dict.items():
     ts_dict = dict()
     for k, df_k in df.groupby(id_col):
         # Sort dates in ascending order
@@ -68,10 +66,6 @@ def read_context(filename: str, id_col: str, x_col: str, y_col: str, *cols) -> D
         df = pd.read_excel(filename)
 
     # Create a dict with x and y coordinates for each id
-    # res = {
-    #     row[id_col]: {'x': row[x_col], 'y': row[y_col]}
-    #     for _, row in df.iterrows()
-    # }
     res = df[[id_col, x_col, y_col, *cols]]
     res = res.rename(columns={x_col: 'x', y_col: 'y'})
     if res.shape[0] != res[id_col].nunique():
@@ -173,7 +167,7 @@ def load_piezo_data(
         exg_cols_stn_scaler: str = 'standard',
         min_length = 0,
         max_null_th = float('inf')
-) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], Dict[str, pd.Series]]:
+) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.Series]]:
 
     label_col = ts_cols[0]
     cols = [label_col] + exg_cols
@@ -226,12 +220,6 @@ def load_piezo_data(
 
     # Create distance matrix for each pair of irregular time series
     dist_matrix = create_spatial_matrix(ctx_dict, with_haversine=False)
-    """for k1, dt1 in tqdm(ctx_dict.items(), desc='Grouping stations by water body'):
-        for k2, dt2 in ctx_dict.items():
-            if k1 < k2:
-                if dt1['Codice WISE GWB'] != dt2['Codice WISE GWB']:
-                    dist_matrix.loc[k1, k2] = np.inf
-                    dist_matrix.loc[k2, k1] = np.inf"""
     # Optimized version with numpy
     stations = list(ctx_dict.keys())
     num_stations = len(stations)
@@ -289,3 +277,17 @@ def load_piezo_data(
                 ts_dict[stn][col] = scaler.transform([[ctx_dict[stn][col]]])[0, 0]
 
     return ts_dict, spt_dict
+
+
+def find_last_date_idx(df: pd.DataFrame, date: datetime.date, th: int = 7) -> int:
+    df_slice = df[df.index <= date]
+    if df_slice.empty:
+        return -1
+
+    last_date = df_slice.index[-1]
+    last_date_idx = df.index.get_loc(last_date)
+
+    if (date - last_date).days > th:
+        return -1
+    else:
+        return last_date_idx

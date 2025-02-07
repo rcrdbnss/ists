@@ -18,10 +18,7 @@ def load_data(
         exg_cols_stn: list[str] = None,
         exg_cols_stn_scaler: str = 'standard',
         num_past=0, num_future=0, max_null_th=float('inf')
-) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], Dict[str, pd.Series]]:
-    # Set a fixed seed for reproducibility
-    # fixed_seed = 42
-    # np.random.seed(fixed_seed)
+) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.Series]]:
 
     if data_type == 'adbpo':
         return load_piezo_data(

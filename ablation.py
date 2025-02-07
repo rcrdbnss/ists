@@ -305,7 +305,7 @@ def get_suffix(train_test_dict):
         'lr': {
             'french': 0.0004, 'ushcn': 0.00004, 'adbpo': 0.0004,
         },
-        "warmup_steps": 4000,
+        # "warmup_steps": 4000,
         'tf': '2.17.0',
         'd_model': {
             'french': 64, 'ushcn': 64, 'adbpo': 32
@@ -371,10 +371,10 @@ def get_suffix(train_test_dict):
             suffix.append('lr0')
         else:
             suffix.append(f'lr{lr:.0e}')
-    if lr == 0:
-        warmup_steps = train_test_dict['params']['model_params']['warmup_steps']
-        if warmup_steps != defaults['warmup_steps']:
-            suffix.append(f'warm{warmup_steps}')
+    # if lr == 0:
+    #     warmup_steps = train_test_dict['params']['model_params']['warmup_steps']
+    #     if warmup_steps != defaults['warmup_steps']:
+    #         suffix.append(f'warm{warmup_steps}')
 
     time_feats = train_test_dict['params']['prep_params']['feat_params']['time_feats']
     time_feats = tuple(sorted(time_feats))
@@ -495,7 +495,7 @@ def main():
     else:
     # if True:
         train_test_dict = data_step(
-            path_params, prep_params, eval_params, keep_nan=False, scaler_type=model_params['transform_type']
+            path_params, prep_params, eval_params, scaler_type=model_params['transform_type']
         )
 
         with open(pickle_file, "wb") as f:

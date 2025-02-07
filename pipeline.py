@@ -10,33 +10,23 @@ from ists.metrics import compute_metrics
 from ists.model.wrapper import ModelWrapper
 
 
-def change_params(path_params: dict, base_string: str, new_string: str) -> dict:
-    """path_params['ts_filename'] = path_params['ts_filename'].replace(base_string, new_string, 1)
-    path_params['ctx_filename'] = path_params['ctx_filename'].replace(base_string, new_string, 1)
-    path_params['ex_filename'] = path_params['ex_filename'].replace(base_string, new_string, 1)
-
-    return path_params"""
-
-
 def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -> dict:
     model_type = model_params['model_type']
     transform_type = model_params['transform_type']
     nn_params = model_params['nn_params']
     loss = model_params['loss']
     lr = model_params['lr']
-    warmup_steps = model_params['warmup_steps']
+    # warmup_steps = model_params['warmup_steps']
     epochs = model_params['epochs']
     patience = model_params['patience']
     batch_size = model_params['batch_size']
 
     # Insert data params in nn_params for building the correct model
     nn_params['feature_mask'] = train_test_dict['x_feat_mask']
-    # nn_params['exg_feature_mask'] = train_test_dict['exg_feat_mask']
     nn_params['spatial_size'] = len(train_test_dict['spt_train']) + 1 # target
     nn_params['exg_size'] = len(train_test_dict['exg_train']) + 1 # target
     nn_params['null_max_size'] = train_test_dict['null_max_size']
     nn_params['time_max_sizes'] = train_test_dict['time_max_sizes']
-    # nn_params['exg_time_max_sizes'] = train_test_dict['exg_time_max_sizes']
     if 'encoder_cls' in model_params:
         nn_params['encoder_cls'] = model_params['encoder_cls']
     if 'encoder_layer_cls' in model_params:
@@ -48,7 +38,6 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
         model_params=nn_params,
         loss=loss,
         lr=lr,
-        warmup_steps=warmup_steps,
         dev=train_test_dict['params']['path_params']['dev']
     )
 
@@ -58,12 +47,12 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
         val_exg=train_test_dict['exg_valid'],
         val_y=train_test_dict['y_valid']
     )
-    test_args = {
-        'test_x': train_test_dict['x_test'],
-        'test_spt': train_test_dict['spt_test'],
-        'test_exg': train_test_dict['exg_test'],
-        'test_y': train_test_dict['y_test'],
-    }
+    # test_args = {
+    #     'test_x': train_test_dict['x_test'],
+    #     'test_spt': train_test_dict['spt_test'],
+    #     'test_exg': train_test_dict['exg_test'],
+    #     'test_y': train_test_dict['y_test'],
+    # }
 
     model.fit(
         x=train_test_dict['x_train'],
@@ -72,10 +61,10 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
         y=train_test_dict['y_train'],
         epochs=epochs,
         batch_size=batch_size,
-        validation_split=0.2,
+        # validation_split=0.2,
         verbose=1,
         **valid_args,
-        **test_args,
+        # **test_args,
         early_stop_patience=patience,
     )
 
@@ -96,7 +85,6 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
         x=train_test_dict['x_test'],
         spt=train_test_dict['spt_test'],
         exg=train_test_dict['exg_test'],
-        # **predict_timedeltas
     )
 
     id_array = train_test_dict['id_test']
@@ -104,29 +92,10 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
                        for y_, id in zip(train_test_dict['y_test'], id_array)])
     y_preds = np.array([np.reshape([scalers[id][f].inverse_transform([[y__]]) for y__, f in zip(y_, scalers[id])], -1)
                         for y_, id in zip(preds, id_array)])
-    # res_test = compute_metrics(y_true=train_test_dict['y_test'], y_preds=preds)
     res_test = compute_metrics(y_true=y_true, y_preds=y_preds)
     res_test = {f'test_{k}': val for k, val in res_test.items()}
     res.update(res_test)
     print(res_test)
-
-    # preds = model.predict(
-    #     x=train_test_dict['x_train'],
-    #     spt=train_test_dict['spt_train'],
-    #     exg=train_test_dict['exg_train'],
-    #     id_array=train_test_dict['id_train'],
-    # )
-    #
-    # id_array = train_test_dict['id_train']
-    # y_true = np.array([np.reshape([scalers[id][f].inverse_transform([[y__]]) for y__, f in zip(y_, scalers[id])], -1)
-    #                    for y_, id in zip(train_test_dict['y_train'], id_array)])
-    # y_preds = np.array([np.reshape([scalers[id][f].inverse_transform([[y__]]) for y__, f in zip(y_, scalers[id])], -1)
-    #                     for y_, id in zip(preds, id_array)])
-    # # res_train = compute_metrics(y_true=train_test_dict['y_train'], y_preds=preds)
-    # res_train = compute_metrics(y_true=y_true, y_preds=y_preds)
-    # res_train = {f'train_{k}': val for k, val in res_train.items()}
-    # res.update(res_train)
-    # print(res_train)
 
     res['loss'] = model.history.history['loss']
     res['val_loss'] = model.history.history['val_loss']
@@ -135,56 +104,12 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
     return res
 
 
-def get_scalers(ts_dict_preproc, exg_dict_preproc, scaler_type, spt_feat):
-    """if scaler_type is None:
-        spt_scalers = None
-        exg_scalers = None
-    else:
-        data = np.concatenate([ts[spt_feat].values for k, ts in ts_dict_preproc.items()]).reshape(-1, 1)
-        spt_scalers = {spt_feat: StandardScaler().fit(data)}
-        exg_scalers = dict()
-        for ef, exg_feat_dict in exg_dict_preproc.items():
-            data = np.concatenate([ts[ef].values for k, ts in exg_feat_dict.items()]).reshape(-1, 1)
-            exg_scalers[ef] = StandardScaler().fit(data)
-    return spt_scalers, exg_scalers"""
-
-
-def get_scalers_station(ts_dict_preproc, exg_dict_preproc, scaler_type, spt_feat):
-    """if scaler_type is None:
-        spt_scalers = None
-        exg_scalers = None
-    else:
-        spt_scalers = {k: dict() for k in ts_dict_preproc}
-        for k, ts in ts_dict_preproc.items():
-            f = spt_feat
-            scaler = StandardScaler().fit(ts[f].values.reshape(-1, 1))
-            spt_scalers[k][f] = scaler
-        exg_scalers = dict()
-
-        # transpose dictionary
-        _exg_dict_preproc = dict()
-        for k1, dt1 in exg_dict_preproc.items():
-            for k2, dt2 in dt1.items():
-                if k2 not in _exg_dict_preproc:
-                    _exg_dict_preproc[k2] = dict()
-                _exg_dict_preproc[k2][k1] = dt2
-        exg_dict_preproc = _exg_dict_preproc
-
-        for k, feats_dict in exg_dict_preproc.items():
-            exg_scalers[k] = dict()
-            for f, ts in feats_dict.items():
-                scaler = StandardScaler().fit(ts[f].values.reshape(-1, 1))
-                exg_scalers[k][f] = scaler
-    return spt_scalers, exg_scalers"""
-
-
 import tensorflow as tf
 from data_step import parse_params, data_step
 
 
 def main():
     path_params, prep_params, eval_params, model_params = parse_params()
-    # path_params = change_params(path_params, '../../data', '../../Dataset/AdbPo')
     if model_params['cpu']:
         tf.config.set_visible_devices([], 'GPU')
     _seed = model_params['seed']
@@ -220,7 +145,7 @@ def main():
     if True:
         # from data_step import data_step
         train_test_dict = data_step(
-            path_params, prep_params, eval_params, keep_nan=False, scaler_type=model_params['transform_type']
+            path_params, prep_params, eval_params, scaler_type=model_params['transform_type']
         )
         with open(pickle_path, "wb") as f:
             print('Saving to', pickle_path, '...', end='')

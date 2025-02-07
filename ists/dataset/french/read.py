@@ -6,7 +6,7 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from tqdm import tqdm
 
 from ..piezo.read import create_ts_dict, read_context, create_spatial_matrix
-from ..utils import insert_null_values, insert_nulls_max_consecutive_thr
+from ..utils import insert_nulls_max_consecutive_thr
 from ...preparation import reindex_ts
 
 
@@ -37,7 +37,7 @@ def load_frenchpiezo_data(
         exg_cols_stn_scaler: str = 'standard',
         min_length = 0,
         max_null_th = float('inf')
-) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], Dict[str, pd.Series]]:
+) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.Series]]:
 
     label_col = ts_cols[0]
     cols = [label_col] + exg_cols
@@ -68,40 +68,11 @@ def load_frenchpiezo_data(
     # Remove context information without time-series
     ctx_dict = {k: ctx for k, ctx in ctx_dict.items() if k in ts_dict}
 
-    """# Create a copy of exogenous series from the raw time-series dict
-    exg_dict = {}
-    for stn in ts_dict.keys():
-        exg_dict[stn] = ts_dict[stn][exg_cols]
-        ts_dict[stn] = ts_dict[stn][ts_cols]
-
-    if exg_cols_stn:
-        exg_cols_stn = {col: [] for col in exg_cols_stn}
-        for col, data in exg_cols_stn.items():
-            for stn in exg_dict.keys():
-                data.append(ctx_dict[stn][col])
-
-        if exg_cols_stn_scaler == 'standard':
-            Scaler = StandardScaler
-        elif exg_cols_stn_scaler == 'minmax':
-            Scaler = MinMaxScaler
-        for col, data in exg_cols_stn.items():
-            scaler = Scaler()
-            scaler.fit(np.reshape(data, (-1, 1)))
-            for stn in exg_dict.keys():
-                exg_dict[stn][col] = scaler.transform([[ctx_dict[stn][col]]])[0, 0]"""
-
     # Create distance matrix for each pair of irregular time series
     dist_matrix = create_spatial_matrix(ctx_dict, with_haversine=False)
-    # for k1, dt1 in tqdm(ctx_dict.items(), desc='Grouping stations by water body'):
-    #     for k2, dt2 in ctx_dict.items():
-    #         if k1 < k2:
-    #             if dt1['masse_eau'] != dt2['masse_eau']:
-    #                 dist_matrix.loc[k1, k2] = np.inf
-    #                 dist_matrix.loc[k2, k1] = np.inf
     # Optimized version with numpy
     stations = list(ctx_dict.keys())
     num_stations = len(stations)
-    # dist_matrix = np.zeros((num_stations, num_stations), dtype=float)
     dist_matrix = dist_matrix.to_numpy()
     water_bodies = [ctx_dict[stn]['masse_eau'] for stn in stations]
 
@@ -129,34 +100,14 @@ def load_frenchpiezo_data(
     print(f"Missing values in the dataset: {nan}/{tot} ({nan/tot:.2%})")
 
     # Loop through the time-series and insert NaN values at random indices
-    """if nan_percentage > 0:
-        # ts_cols = ['p']
-        ts_dict = {
-            k: insert_null_values(ts, nan_percentage, cols=ts_cols)
-            for k, ts in ts_dict.items()
-        }
-        exg_dict = {
-            k: insert_null_values(exg, nan_percentage, cols=exg_cols)
-            for k, exg in exg_dict.items()
-        }"""
     if nan_percentage > 0:
         nan, tot = 0, 0
         for stn in tqdm(ts_dict, desc='Injecting null values'):
-            # ts = insert_null_values(ts_dict[stn], nan_percentage, ts_cols + exg_cols)
-            # ts_dict[stn] = ts
-            # nan += ts.isnull().sum().sum()
-            # tot += len(ts)
             for col in cols:
                 ts_dict[stn][col] = insert_nulls_max_consecutive_thr(ts_dict[stn][col].to_numpy(), nan_percentage, max_null_th)
                 nan += ts_dict[stn][col].isnull().sum()
                 tot += len(ts_dict[stn][col])
         print(f'Missing values after injection: {nan}/{tot} ({nan/tot:.2%})')
-
-    # Create a copy of exogenous series from the raw time-series dict
-    # exg_dict = {}
-    # for stn in ts_dict.keys():
-    #     exg_dict[stn] = ts_dict[stn][exg_cols]
-    #     ts_dict[stn] = ts_dict[stn][ts_cols]
 
     # Station-level exogenous features, such as depth into the water body
     if exg_cols_stn:

@@ -6,7 +6,7 @@ from sklearn.metrics.pairwise import haversine_distances
 from tqdm import tqdm
 
 from ..piezo.read import ContextType, create_ts_dict
-from ..utils import insert_nulls_max_consecutive_thr, insert_null_values
+from ..utils import insert_nulls_max_consecutive_thr
 from ...preparation import reindex_ts
 
 
@@ -56,7 +56,7 @@ def load_ushcn_data(
         nan_percentage: float = 0,
         min_length=0,
         max_null_th=float('inf')
-) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], Dict[str, pd.Series]]:
+) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.Series]]:
 
     label_col = ts_cols[0]
     cols = [label_col] + exg_cols
@@ -110,22 +110,11 @@ def load_ushcn_data(
     if nan_percentage > 0:
         nan, tot = 0, 0
         for stn in tqdm(ts_dict.keys(), desc='Injecting null values'):
-            # ts = insert_null_values(ts_dict[stn], nan_percentage, ts_cols)
-            # ts_dict[stn] = ts
-            # nan += ts.isnull().sum().sum()
-            # tot += len(ts)
             for col in cols:
                 ts_dict[stn][col] = insert_nulls_max_consecutive_thr(ts_dict[stn][col].to_numpy(), nan_percentage, max_null_th)
                 nan += ts_dict[stn][col].isnull().sum()
                 tot += len(ts_dict[stn][col])
         print(f"Missing values after injection: {nan}/{tot} ({nan/tot:.2%})")
-
-    # Create a copy of exogenous series from the raw time-series dict
-    # exg_dict = {}
-    # for stn in ts_dict.keys():
-    #     ts = ts_dict[stn]
-    #     exg_dict[stn] = ts.loc[:, exg_cols]
-    #     ts_dict[stn] = ts.loc[:, ts_cols]
 
     return ts_dict, spt_dict
 

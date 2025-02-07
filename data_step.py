@@ -77,12 +77,12 @@ def parse_params():
 
     if args.lr is not None:
         conf['model_params']['lr'] = args.lr
-        if args.lr > 0:
-            args.warmup_steps = None  # ignore
-    if args.warmup_steps is not None:
-        conf['model_params']['warmup_steps'] = args.warmup_steps
-    if "warmup_steps" not in conf['model_params']:
-        conf['model_params']['warmup_steps'] = None
+        # if args.lr > 0:
+        #     args.warmup_steps = None  # ignore
+    # if args.warmup_steps is not None:
+    #     conf['model_params']['warmup_steps'] = args.warmup_steps
+    # if "warmup_steps" not in conf['model_params']:
+    #     conf['model_params']['warmup_steps'] = None
     if args.l2_reg is not None:
         conf['model_params']['nn_params']['l2_reg'] = args.l2_reg
     if args.dropout is not None:
@@ -205,7 +205,7 @@ def apply_scaler(ts_dict, features, train_end_excl, scaler_init):
     return ts_dict, scalers
 
 
-def data_step(path_params: dict, prep_params: dict, eval_params: dict, keep_nan: bool = False, scaler_type=None):
+def data_step(path_params: dict, prep_params: dict, eval_params: dict, scaler_type=None):
     ts_params = prep_params["ts_params"]
     feat_params = prep_params["feat_params"]
     spt_params = prep_params["spt_params"]
@@ -277,7 +277,6 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, keep_nan:
     # Compute feature mask and time encoding max sizes
     x_feature_mask = define_feature_mask(
         base_features=[label_col],
-        # null_feat=feat_params['null_feat'],
         null_feat="code_bool",
         time_feats=time_feats
     )
@@ -338,7 +337,6 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, keep_nan:
     print(f"X test: {len(res['x_test'])}")
 
     # Save extra params in train test dictionary
-    # Save x and exogenous array feature mask
     res['x_feat_mask'] = x_feature_mask
 
     # Save null max size by finding the maximum between train and test if any
@@ -351,7 +349,6 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, keep_nan:
 
     # Save time max sizes
     res['time_max_sizes'] = x_time_max_sizes
-    # res['exg_time_max_sizes'] = exg_time_max_sizes
     res['scalers'] = spt_scalers
 
     nan, tot = 0, 0
@@ -370,13 +367,9 @@ if __name__ == '__main__':
         random.seed(_seed)
         np.random.seed(_seed)
 
-    # res_dir = './output/results'
     data_dir = './output/pickle' + ('_seed' + str(_seed) if _seed != 42 else '')
-    # model_dir = './output/model' + ('_seed' + str(_seed) if _seed != 42 else '')
 
-    # os.makedirs(res_dir, exist_ok=True)
     os.makedirs(data_dir, exist_ok=True)
-    # os.makedirs(model_dir, exist_ok=True)
 
     subset = path_params['ex_filename']
     if path_params['type'] == 'adbpo' and 'exg_w_tp_t2m' in subset:
@@ -392,12 +385,10 @@ if __name__ == '__main__':
 
     out_name = f"{path_params['type']}_{subset}_nan{int(nan_percentage * 10)}_np{num_past}_nf{num_fut}"
     print('out_name:', out_name)
-    # results_path = os.path.join(res_dir, f"{out_name}.csv")
     pickle_path = os.path.join(data_dir, f"{out_name}.pickle")
-    # checkpoint_path = os.path.join(model_dir, f"{out_name}")
 
     train_test_dict = data_step(
-        path_params, prep_params, eval_params, keep_nan=False, scaler_type=model_params['transform_type']
+        path_params, prep_params, eval_params, scaler_type=model_params['transform_type']
     )
 
     with open(pickle_path, "wb") as f:
