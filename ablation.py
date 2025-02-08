@@ -369,6 +369,9 @@ def get_suffix(train_test_dict):
     if tf.__version__ != defaults['tf']:
         suffix.append(f'tf{tf.__version__.replace(".", "")}')
 
+    if train_test_dict["params"]["model_params"]["nn_params"]["is_null_embedding"]:
+        suffix.append("Nemb")
+
     return '_'.join(suffix)
 
 
@@ -401,7 +404,6 @@ def ablation(
         if suffix: name = f"{name}#{suffix}"
         if '#' not in name:
             name += '#'
-        name += "_sk16"
         if name.endswith('#'):
             name = name[:-1]
 
