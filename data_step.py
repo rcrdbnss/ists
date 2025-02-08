@@ -11,8 +11,7 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from data_step_refactor import time_encoding, link_spatial_data_water_body, link_spatial_data, null_distance_array, \
     extract_windows
 from ists.dataset.read import load_data
-from ists.preparation import define_feature_mask, prepare_train_test, get_list_null_max_size
-from ists.preprocessing import get_time_max_sizes
+from ists.preparation import define_feature_mask, prepare_train_test
 from ists.utils import IQRMasker
 
 
@@ -29,6 +28,8 @@ def parse_params():
     parser.add_argument('--num-past', type=int, default=None, help='Number of past values to consider')
     parser.add_argument('--num-fut', type=int, default=None, help='Number of future values to predict')
     parser.add_argument('--nan-percentage', type=float, default=None, help='Percentage of NaN values to insert')
+
+    parser.add_argument("--is-null-embedding", action='store_true', help="Use null embedding")
 
     parser.add_argument("--d-model", type=int, default=None)
     parser.add_argument("--num-heads", type=int, default=None)
@@ -61,6 +62,8 @@ def parse_params():
     if args.nan_percentage is not None:
         conf['path_params']['nan_percentage'] = args.nan_percentage
 
+    conf["model_params"]["nn_params"]["is_null_embedding"] = args.is_null_embedding
+
     if args.d_model is not None:
         conf['model_params']['nn_params']['d_model'] = args.d_model
     if args.num_heads is not None:
@@ -77,12 +80,6 @@ def parse_params():
 
     if args.lr is not None:
         conf['model_params']['lr'] = args.lr
-        # if args.lr > 0:
-        #     args.warmup_steps = None  # ignore
-    # if args.warmup_steps is not None:
-    #     conf['model_params']['warmup_steps'] = args.warmup_steps
-    # if "warmup_steps" not in conf['model_params']:
-    #     conf['model_params']['warmup_steps'] = None
     if args.l2_reg is not None:
         conf['model_params']['nn_params']['l2_reg'] = args.l2_reg
     if args.dropout is not None:
@@ -109,8 +106,6 @@ def parse_params():
         conf['model_params']['epochs'] = 3
         conf['model_params']['patience'] = 1
 
-    # if args.cpu:
-    #     tf.config.set_visible_devices([], 'GPU')
     conf['model_params']['cpu'] = args.cpu
 
     return conf['path_params'], conf['prep_params'], conf['eval_params'], conf['model_params']
@@ -280,7 +275,6 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, scaler_ty
         null_feat="code_bool",
         time_feats=time_feats
     )
-    x_time_max_sizes = get_time_max_sizes(time_feats)
     print(f'Feature mask: {x_feature_mask}')
 
     num_spt = spt_params["num_spt"]
@@ -338,19 +332,13 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, scaler_ty
 
     # Save extra params in train test dictionary
     res['x_feat_mask'] = x_feature_mask
+    res['scalers'] = spt_scalers
 
-    # Save null max size by finding the maximum between train and test if any
     arr_list = (
             [res['x_train']] + [res['x_test']] + [res['x_valid']] +
             res['spt_train'] + res['spt_test'] + res['spt_valid'] +
             res['exg_train'] + res['exg_test'] + res['exg_valid']
     )
-    res['null_max_size'] = get_list_null_max_size(arr_list, x_feature_mask)
-
-    # Save time max sizes
-    res['time_max_sizes'] = x_time_max_sizes
-    res['scalers'] = spt_scalers
-
     nan, tot = 0, 0
     for x in arr_list:
         nan += x[:, :, 1].sum().sum()

@@ -1,34 +1,15 @@
 from typing import List
 
-import numpy as np
 import pandas as pd
 
 
-def get_time_max_sizes(codes: List[str]) -> List[int]:
-    time_max_sizes = []
-    if not codes:
-        # Empty codes return an empty list
-        return time_max_sizes
-
-    for code in codes:
-        if code == 'D':
-            # Extract max day value
-            val = 31
-        elif code == 'DW':
-            # Extract max day of the week value (Monday: 0, Sunday: 6)
-            val = 7
-        elif code == 'M':
-            # Extract max month value
-            val = 12
-        elif 'WY' in codes:
-            # Extract max week of the year value
-            val = 53
-        else:
-            raise ValueError(f"Code {code} is not supported, it must be ['D', 'DW', 'WY', 'M']")
-
-        time_max_sizes.append(val)
-
-    return time_max_sizes
+# Number of distinct values for each time feature
+TIME_N_VALUES = {
+    'D': 31,
+    'DW': 7,
+    'M': 12,
+    'WY': 53
+}
 
 
 def time_encoding(df: pd.DataFrame, codes: List[str]) -> pd.DataFrame:

@@ -40,17 +40,17 @@
         "model_type": "sttransformer",
         "nn_params": {
             "kernel_size": 5,
-            "d_model": 64,
-            "num_heads": 4,
+            "d_model": 32,
+            "num_heads": 1,
             "dff": 128,
             "gru": 256,
-            "fff": [256],
+            "fff": [128],
             "activation": "relu",
             "num_layers": 1,
-            "dropout_rate": 0.2,
-            "l2_reg": 0.01
+            "dropout_rate": 0.1,
+            "l2_reg": 0.001
         },
-        "lr": 0.0004,
+        "lr": 0.0001,
         "loss": "mse",
         "batch_size": 64,
         "epochs": 100,

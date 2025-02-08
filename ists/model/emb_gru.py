@@ -12,9 +12,7 @@ class EmbGRUModel(tf.keras.Model):
                  kernel_size,
                  d_model,
                  fff,
-                 time_cnn=True,
                  dropout_rate=0.1,
-                 time_max_sizes=None,
                  l2_reg=None,
                  do_exg=True, do_spt=True, do_emb=True,
                  **kwargs):
@@ -23,6 +21,7 @@ class EmbGRUModel(tf.keras.Model):
         # assuming features mask for a univariate series with one or more temporal features: [0, 1, 2...]
         arg_feat, arg_null, arg_time = (feature_mask == 0), (feature_mask == 1), (feature_mask == 2)
         feature_mask_range = np.arange(len(feature_mask))
+        self.time_features = kwargs["time_features"]  # todo: adjust
         self.null_id = feature_mask_range[arg_null][0] if arg_null.any() else None
         self.feat_id = feature_mask_range[arg_feat][0]
         self.time_ids = feature_mask_range[arg_time]
@@ -44,8 +43,7 @@ class EmbGRUModel(tf.keras.Model):
                 d_model=d_model,
                 kernel_size=kernel_size,
                 feature_mask=feature_mask,
-                with_cnn=time_cnn,
-                time_max_sizes=time_max_sizes,
+                time_features=self.time_features,
             )
             self.dropout = tf.keras.layers.Dropout(dropout_rate)
 
@@ -72,16 +70,6 @@ class EmbGRUModel(tf.keras.Model):
                 self.emb = tf.keras.layers.Lambda(lambda x: x)
             self.dropout = tf.keras.layers.Lambda(lambda x: x)
 
-        # reg = {}
-        # if l2_reg:
-        #     reg['kernel_regularizer'] = tf.keras.regularizers.l2(l2_reg)
-        # self.final_layers = tf.keras.models.Sequential([
-        #     tf.keras.layers.GRU(fff, **reg, recurrent_regularizer=tf.keras.regularizers.l2(l2_reg)),
-        #     tf.keras.layers.Dropout(dropout_rate),
-        #     tf.keras.layers.Dense(fff, activation='gelu', **reg),
-        #     tf.keras.layers.Dropout(dropout_rate),
-        #     tf.keras.layers.Dense(1, activation='linear')
-        # ])
         self.final_layers = FinalLayersGRU(fff, dropout_rate, l2_reg)
 
     def split_data_attn_mask(self, x):

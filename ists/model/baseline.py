@@ -9,7 +9,7 @@ from ists.model.model import FinalLayersGRU
 class EncoderVanilla(tf.keras.layers.Layer):
 
     def __init__(self, *, d_model, num_heads, dff, activation='relu', num_layers=1, dropout_rate=0.1, l2_reg=None,
-                 kernel_size=3, feature_mask=None, time_cnn=True, time_max_sizes=None, do_emb=True, **kwargs):
+                 kernel_size=3, feature_mask=None, do_emb=True, **kwargs):
         super().__init__()
         self.num_layers = num_layers
 
@@ -19,8 +19,7 @@ class EncoderVanilla(tf.keras.layers.Layer):
                 d_model=d_model,
                 kernel_size=kernel_size,
                 feature_mask=feature_mask,
-                with_cnn=time_cnn,
-                time_max_sizes=time_max_sizes,
+                time_features=kwargs["time_features"]  # todo: adjust
             )
             self.dropout = tf.keras.layers.Dropout(dropout_rate)
 
@@ -74,7 +73,7 @@ class BaselineModel(tf.keras.Model):
                  # time_cnn=True,
                  num_layers=1,
                  dropout_rate=0.1,
-                 time_max_sizes=None,
+                 # time_max_sizes=None,
                  l2_reg=None,
                  do_exg=True, do_spt=True, do_emb=True,
                  **kwargs):
@@ -89,7 +88,7 @@ class BaselineModel(tf.keras.Model):
         self.activation = activation
         self.num_layers = num_layers
         self.dropout_rate = dropout_rate
-        self.time_max_sizes = time_max_sizes
+        self.time_features = kwargs["time_features"]  # todo: adjust
         self.l2_reg = l2_reg
         self.do_exg, self.do_spt, self.do_emb = do_exg, do_spt, do_emb
 
@@ -121,21 +120,10 @@ class BaselineModel(tf.keras.Model):
             l2_reg=self.l2_reg,
             kernel_size=self.kernel_size,
             feature_mask=self.feature_mask,
-            # time_cnn=time_cnn,
-            time_max_sizes=self.time_max_sizes,
+            time_features=self.time_features,
             do_emb=self.do_emb,
         )
 
-        # reg = {}
-        # if l2_reg:
-        #     reg['kernel_regularizer'] = tf.keras.regularizers.l2(l2_reg)
-        # self.final_layers = tf.keras.models.Sequential([
-        #     tf.keras.layers.GRU(fff, **reg, recurrent_regularizer=tf.keras.regularizers.l2(l2_reg)),
-        #     tf.keras.layers.Dropout(dropout_rate),
-        #     tf.keras.layers.Dense(fff, activation='gelu', **reg),
-        #     tf.keras.layers.Dropout(dropout_rate),
-        #     tf.keras.layers.Dense(1, activation='linear')
-        # ])
         self.final_layers = FinalLayersGRU(self.gru, self.fff, self.dropout_rate, self.l2_reg)
 
     def split_data_attn_mask(self, x):

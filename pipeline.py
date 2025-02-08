@@ -16,7 +16,6 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
     nn_params = model_params['nn_params']
     loss = model_params['loss']
     lr = model_params['lr']
-    # warmup_steps = model_params['warmup_steps']
     epochs = model_params['epochs']
     patience = model_params['patience']
     batch_size = model_params['batch_size']
@@ -25,8 +24,7 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
     nn_params['feature_mask'] = train_test_dict['x_feat_mask']
     nn_params['spatial_size'] = len(train_test_dict['spt_train']) + 1 # target
     nn_params['exg_size'] = len(train_test_dict['exg_train']) + 1 # target
-    nn_params['null_max_size'] = train_test_dict['null_max_size']
-    nn_params['time_max_sizes'] = train_test_dict['time_max_sizes']
+    nn_params["time_features"] = train_test_dict['params']["prep_params"]["feat_params"]['time_feats']
     if 'encoder_cls' in model_params:
         nn_params['encoder_cls'] = model_params['encoder_cls']
     if 'encoder_layer_cls' in model_params:
@@ -47,12 +45,6 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
         val_exg=train_test_dict['exg_valid'],
         val_y=train_test_dict['y_valid']
     )
-    # test_args = {
-    #     'test_x': train_test_dict['x_test'],
-    #     'test_spt': train_test_dict['spt_test'],
-    #     'test_exg': train_test_dict['exg_test'],
-    #     'test_y': train_test_dict['y_test'],
-    # }
 
     model.fit(
         x=train_test_dict['x_train'],
@@ -61,10 +53,8 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
         y=train_test_dict['y_train'],
         epochs=epochs,
         batch_size=batch_size,
-        # validation_split=0.2,
         verbose=1,
         **valid_args,
-        # **test_args,
         early_stop_patience=patience,
     )
 
@@ -171,66 +161,6 @@ def main():
     pd.DataFrame(results).T.to_csv(results_path, index=True)
 
     print('Done!')
-
-
-def main2():
-    """conf_file = 'data/params_ushcn.json'
-    subsets = [
-        'subset_agg_th1_0.csv',
-        'subset_agg_th1_1.csv',
-        'subset_agg_th1_2.csv',
-        'subset_agg_th15_0.csv',
-        'subset_agg_th15_1.csv',
-        'subset_agg_th15_2.csv',
-        'subset_agg_th15_3.csv'
-    ]
-    with open(conf_file, 'r') as f:
-        conf = json.load(f)
-
-    for nan_num in [0.0, 0.2, 0.5, 0.8]:
-        for subset in subsets:
-            print(f"\n {subset}")
-            path_params, prep_params, eval_params, model_params = conf['path_params'], conf['prep_params'], conf[
-                'eval_params'], conf['model_params']
-            path_params["ex_filename"] = "../../data/USHCN/" + subset
-            path_params["nan_percentage"] = nan_num
-            path_params = change_params(path_params, '../../data', '../../Dataset/AdbPo')
-
-            from data_step import data_step
-            train_test_dict = data_step(path_params, prep_params, eval_params)
-
-            with open(
-                    f"output/{path_params['type']}_{subset.replace('subset_agg_', '').replace('.csv', '')}_nan{int(nan_num * 10)}.pickle",
-                    "wb") as f:
-
-                # List of keys to remove
-                keys_to_remove = [
-                    'dist_x_train',
-                    'dist_x_test',
-
-                    'dist_y_train',
-                    'dist_y_test',
-
-                    'spt_train',
-                    'spt_test',
-
-                    'exg_train',
-                    'exg_test',
-                ]
-
-                # Remove keys
-                for key in keys_to_remove:
-                    train_test_dict.pop(key)
-
-                train_test_dict['params'] = {
-                    'path_params': path_params,
-                    'prep_params': prep_params,
-                    'eval_params': eval_params,
-                    'model_params': model_params,
-                }
-                pickle.dump(train_test_dict, f)
-
-    print('Hello World!')"""
 
 
 if __name__ == '__main__':

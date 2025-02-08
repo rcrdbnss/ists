@@ -13,29 +13,23 @@ from data_step import parse_params, data_step
 
 
 def no_ablation(train_test_dict) -> dict:
-    # train_test_dict['params']['model_params']['model_type'] = "sttransformer"
     return train_test_dict
 
 
 def ablation_embedder_no_feat(train_test_dict, code) -> dict:
-    for n in (['train', 'test'] + (['valid'] if train_test_dict['validation_data'] else [])):
+    for n in ['train', 'test', 'valid']:
         cond_x = [x != code for x in train_test_dict['x_feat_mask']]
         train_test_dict[f'x_{n}'] = train_test_dict[f'x_{n}'][:, :, cond_x]
         train_test_dict[f'spt_{n}'] = [x[:, :, cond_x] for x in train_test_dict[f'spt_{n}']]
-
-        # cond_exg = [x != code for x in train_test_dict['exg_feat_mask']]
-        # train_test_dict[f'exg_{n}'] = train_test_dict[f'exg_{n}'][:, :, cond_exg]
         train_test_dict[f'exg_{n}'] = [x[:, :, cond_x] for x in train_test_dict[f'exg_{n}']]
 
     train_test_dict['x_feat_mask'] = [x for x in train_test_dict['x_feat_mask'] if x != code]
-    # train_test_dict['exg_feat_mask'] = [x for x in train_test_dict['exg_feat_mask'] if x != code]
 
     if code == 1:
-        train_test_dict['null_max_size'] = None
+        train_test_dict['model_params']['nn_params']['is_null_embedding'] = False
 
     if code == 2:
-        train_test_dict['time_max_sizes'] = []
-        # train_test_dict['exg_time_max_sizes'] = []
+        train_test_dict['params']["prep_params"]["feat_params"]['time_feats'] = None
 
     return train_test_dict
 
@@ -212,10 +206,6 @@ def ablation_stt_2(train_test_dict) -> dict:
 
 
 def apply_ablation_code(abl_code: str, train_test_dict):
-    # suffix = None
-    # if '#' in abl_code:
-    #     abl_code, suffix = abl_code.split('#')
-
     T, S, E = 'T' in abl_code, 'S' in abl_code, 'E' in abl_code
     n, t = 'n' in abl_code, 't' in abl_code
     abl_1 = '1' in abl_code
@@ -305,7 +295,6 @@ def get_suffix(train_test_dict):
         'lr': {
             'french': 0.0004, 'ushcn': 0.00004, 'adbpo': 0.0004,
         },
-        # "warmup_steps": 4000,
         'tf': '2.17.0',
         'd_model': {
             'french': 64, 'ushcn': 64, 'adbpo': 32
@@ -371,10 +360,6 @@ def get_suffix(train_test_dict):
             suffix.append('lr0')
         else:
             suffix.append(f'lr{lr:.0e}')
-    # if lr == 0:
-    #     warmup_steps = train_test_dict['params']['model_params']['warmup_steps']
-    #     if warmup_steps != defaults['warmup_steps']:
-    #         suffix.append(f'warm{warmup_steps}')
 
     time_feats = train_test_dict['params']['prep_params']['feat_params']['time_feats']
     time_feats = tuple(sorted(time_feats))

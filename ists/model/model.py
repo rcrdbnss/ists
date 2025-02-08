@@ -18,25 +18,27 @@ class STTransformerSequentialAttnMask(tf.keras.Model):
             gru,
             fff,
             activation='relu',
-            # exg_cnn=True,
-            # spt_cnn=True,
-            # time_cnn=True,
             num_layers=1,
             dropout_rate=0.1,
-            time_max_sizes=None,
+            time_features=None,
             do_exg=True, do_spt=True, do_emb=True, force_target=False,
             encoder_layer_cls=None,
             l2_reg=None,
+            is_null_embedding=False,
             **kwargs
     ):
         super().__init__()
         feature_mask = np.array(feature_mask)
-        feature_ids = np.array([i for i, x in enumerate(feature_mask)])
-        arg_null = feature_mask == 1
-        if arg_null.any():
-            self.feature_ids, self.feature_mask, self.null_id = feature_ids[~arg_null], feature_mask[~arg_null], feature_mask[arg_null][0]
+
+        if is_null_embedding:
+            self.feature_mask, self.null_id = feature_mask, None
         else:
-            self.feature_ids, self.feature_mask, self.null_id = feature_ids, feature_mask, None
+            arg_null = feature_mask == 1
+            if arg_null.any():
+                self.feature_mask, self.null_id = feature_mask[~arg_null], feature_mask[arg_null][0]
+            else:
+                self.feature_mask, self.null_id = feature_mask, None
+
         self.kernel_size = kernel_size
         self.d_model = d_model
         self.num_heads = num_heads
@@ -44,23 +46,21 @@ class STTransformerSequentialAttnMask(tf.keras.Model):
         self.gru = gru
         self.fff = fff
         self.activation = activation
-        # self.exg_cnn = exg_cnn
-        # self.spt_cnn = spt_cnn
-        # self.time_cnn = time_cnn
         self.num_layers = num_layers
         self.dropout_rate = dropout_rate
-        self.time_max_sizes = time_max_sizes
+        self.time_features = time_features
         self.do_exg, self.do_spt, self.do_emb, self.force_target = do_exg, do_spt, do_emb, force_target
         self.encoder_layer_cls = encoder_layer_cls
         self.l2_reg = l2_reg
+        self.is_null_embedding = is_null_embedding
 
         if self.do_emb:
-            self.target_embedder = TemporalEmbedding(
+            self.embedder = TemporalEmbedding(
                 d_model=self.d_model,
                 kernel_size=self.kernel_size,
                 feature_mask=self.feature_mask,
-                # with_cnn=self.time_cnn,
-                time_max_sizes=self.time_max_sizes,
+                time_features=self.time_features,
+                is_null_embedding=self.is_null_embedding
             )
             self.dropout = tf.keras.layers.Dropout(self.dropout_rate)
 
@@ -82,9 +82,9 @@ class STTransformerSequentialAttnMask(tf.keras.Model):
                     x = tf.where(arg_time, t, x)
                     return x
 
-                self.target_embedder = tf.keras.layers.Lambda(norm_time)
+                self.embedder = tf.keras.layers.Lambda(norm_time)
             else:
-                self.target_embedder = tf.keras.layers.Lambda(lambda x: x)
+                self.embedder = tf.keras.layers.Lambda(lambda x: x)
             self.dropout = tf.keras.layers.Lambda(lambda x: x)
 
         self.encoder = SequentialEncoderAttnMask(
@@ -114,12 +114,9 @@ class STTransformerSequentialAttnMask(tf.keras.Model):
             'gru': self.gru,
             'fff': self.fff,
             'activation': self.activation,
-            # 'exg_cnn': self.exg_cnn,
-            # 'spt_cnn': self.spt_cnn,
-            # 'time_cnn': self.time_cnn,
             'num_layers': self.num_layers,
             'dropout_rate': self.dropout_rate,
-            'time_max_sizes': self.time_max_sizes,
+            'time_features': self.time_features,
             'do_exg': self.do_exg,
             'do_spt': self.do_spt,
             'do_emb': self.do_emb,
@@ -132,7 +129,10 @@ class STTransformerSequentialAttnMask(tf.keras.Model):
     def split_data_attn_mask(self, x):
         if self.null_id is None:
             return x, None
-        return tf.gather(x, self.feature_ids, axis=-1), 1 - tf.gather(x, self.null_id, axis=-1)
+        value_ids = np.ones(tf.shape(x)[2])
+        value_ids[self.null_id] = 0
+        value_ids = value_ids.astype(bool)
+        return tf.boolean_mask(x, value_ids, axis=2), 1 - x[:, :, self.null_id]
 
     def call(self, inputs):
         exg_x, spt_x = inputs[0], inputs[1]
@@ -156,12 +156,9 @@ class STTransformerSequentialAttnMask(tf.keras.Model):
         if np.all([m is None for m in exg_attn_mask]): exg_attn_mask = None
         if np.all([m is None for m in spt_attn_mask]): spt_attn_mask = None
 
-        # x = self.target_embedder(x)
-        # exg_x = self.exogenous_embedder(exg_x)
-        # spt_x = self.spatial_embedder(spt_x)
-        x = self.target_embedder(x)
-        exg_x = [self.target_embedder(e) for e in exg_x]
-        spt_x = [self.target_embedder(s) for s in spt_x]
+        x = self.embedder(x)
+        exg_x = [self.embedder(e) for e in exg_x]
+        spt_x = [self.embedder(s) for s in spt_x]
         x_shape = tf.shape(x)
         b, t, e = x_shape[0], x_shape[1], x_shape[2]
         x, exg_x, spt_x = self.dropout(x), [self.dropout(e) for e in exg_x], [self.dropout(s) for s in spt_x]

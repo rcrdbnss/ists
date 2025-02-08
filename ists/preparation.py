@@ -28,29 +28,10 @@ def define_feature_mask(base_features: List[str], null_feat: str = None, time_fe
     return features_mask
 
 
-def get_null_max_size(x: np.ndarray, feature_mask: List[int]) -> Optional[int]:
-    if 1 not in feature_mask:
-        # No null feature inside input data
-        return None
-    cond = np.array(feature_mask) == 1
-    max_null = int(np.max(x[:, :, cond]))
-    return max_null + 1
-
-
-def get_list_null_max_size(arr_list: List[np.ndarray], feature_mask: List[int]) -> Optional[int]:
-    if 1 not in feature_mask:
-        # No null feature inside input data
-        return None
-    null_max_sizes = [get_null_max_size(arr, feature_mask) for arr in arr_list]
-    return np.max(null_max_sizes)
-
-
 def prepare_train_test(
         x_array: np.ndarray,
         y_array: np.ndarray,
         time_array: np.ndarray,
-        # dist_x_array: np.ndarray,
-        # dist_y_array: np.ndarray,
         id_array: np.ndarray,
         spt_array: List[np.ndarray],
         exg_array: List[np.ndarray],
