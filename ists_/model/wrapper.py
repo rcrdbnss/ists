@@ -8,6 +8,9 @@ import tensorflow as tf
 from .baseline import BaselineModel
 from .emb_gru import EmbGRUModel
 from .model import STTransformerSequentialAttnMask
+from .model_avgpool import IstfAvgPool
+from .model_cls import IstfCLS
+from .model_interp_cls import IstfInterpCLS
 
 
 def get_model(model_type: str, model_params) -> tf.keras.Model:
@@ -17,6 +20,12 @@ def get_model(model_type: str, model_params) -> tf.keras.Model:
         return BaselineModel(**model_params)
     if model_type == 'emb_gru':
         return EmbGRUModel(**model_params)
+    if model_type == "istf_cls":
+        return IstfCLS(**model_params)
+    if model_type == 'istf_interp_cls':
+        return IstfInterpCLS(**model_params)
+    if model_type == 'istf_avgpool':
+        return IstfAvgPool(**model_params)
 
     raise ValueError(f'Model "{model_type}" is not supported')
 
@@ -91,16 +100,17 @@ class ModelWrapper(object):
         self.checkpoint_path = os.path.join(self.checkpoint_dir, 'cp.weights.h5')
         os.makedirs(self.checkpoint_dir, exist_ok=True)
 
+        self.lr = lr
+
+        optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr)
+
         self.model = get_model(model_type, model_params)
-
-        optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
-
         self.model.compile(
             loss=loss,
             optimizer=optimizer,
             metrics=['mae', 'mse'],
-            run_eagerly=dev,
-            # run_eagerly=False,
+            # run_eagerly=dev,
+            run_eagerly=False,
         )
 
         self.history = None
@@ -130,7 +140,8 @@ class ModelWrapper(object):
 
         model_checkpoint = tf.keras.callbacks.ModelCheckpoint(
             self.checkpoint_path,
-            monitor='val_loss',
+            # monitor='val_loss',
+            monitor='val_mse',
             save_best_only=True,
             save_weights_only=True,
             mode='min',
@@ -142,15 +153,35 @@ class ModelWrapper(object):
 
         if early_stop_patience:
             early_stopping = tf.keras.callbacks.EarlyStopping(
-                monitor='val_loss',
+                # monitor='val_loss',
+                monitor='val_mse',
                 patience=early_stop_patience,
                 mode='min',
                 verbose=1,
                 restore_best_weights=False,
-                start_from_epoch=0,
+                start_from_epoch=10,
                 min_delta=2e-4,
             )
             callbacks.append(early_stopping)
+
+
+        def warmup_linear_decay_lr_schedule(max_lr, warmup_epochs, total_epochs):
+            def scheduler(epoch, lr):
+                if epoch < warmup_epochs:
+                    lr = max_lr * ((epoch + 1) / warmup_epochs)
+                else:
+                    decay_epochs = total_epochs - warmup_epochs
+                    lr = max_lr * ((total_epochs - epoch) / decay_epochs)
+                return lr
+            return scheduler
+
+
+        warmup_epochs = int(epochs * 0.1)
+        lr_schedule = tf.keras.callbacks.LearningRateScheduler(
+            warmup_linear_decay_lr_schedule(self.lr, warmup_epochs, epochs),
+            verbose=1  # Set to 1 to log LR changes at each epoch
+        )
+        # callbacks.append(lr_schedule)
 
         val_spt, val_exg = self._get_spatial_array(val_x, val_spt), self._get_spatial_array(val_x, val_exg)
         val_x = [np.stack(val_exg, axis=1), np.stack(val_spt, axis=1)]

@@ -10,9 +10,9 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
 from data_step_refactor import time_encoding, link_spatial_data_water_body, link_spatial_data, null_distance_array, \
     extract_windows
-from ists.dataset.read import load_data
-from ists.preparation import define_feature_mask, prepare_train_test
-from ists.utils import IQRMasker
+from ists_.dataset.read import load_data
+from ists_.preparation import define_feature_mask, prepare_train_test
+from ists_.utils import IQRMasker
 
 
 def parse_params():
@@ -23,11 +23,12 @@ def parse_params():
                         help='the path where the configuration is stored.')
     parser.add_argument('--dev', action='store_true', help='Run on development data')
     parser.add_argument('--cpu', action='store_true', help='Run on CPU')
-    parser.add_argument('--seed', type=int, default=42, help='Random seed')
+    parser.add_argument('--seed', type=int, default=42, help='Random seed for model initialization')
 
     parser.add_argument('--num-past', type=int, default=None, help='Number of past values to consider')
     parser.add_argument('--num-fut', type=int, default=None, help='Number of future values to predict')
     parser.add_argument('--nan-percentage', type=float, default=None, help='Percentage of NaN values to insert')
+    parser.add_argument('--data-seed', type=int, default=42, help='Random seed for data preparation')
 
     parser.add_argument("--is-null-embedding", action='store_true', help="Use null embedding")
 
@@ -36,9 +37,10 @@ def parse_params():
     parser.add_argument("--dff", type=int, default=None)
     parser.add_argument("--gru", type=int, default=None)
     parser.add_argument("--fff", type=int, nargs="+", default=None)
+    parser.add_argument("--num-layers", type=int, default=None)
 
     parser.add_argument("--lr", type=float, default=None, help="Learning rate")
-    parser.add_argument("--warmup-steps", type=int, default=None, help="Warmup steps for custom scheduler")
+    # parser.add_argument("--warmup-steps", type=int, default=None, help="Warmup steps for custom scheduler")
     parser.add_argument("--l2-reg", type=float, default=None, help="L2 regularization")
     parser.add_argument("--dropout", type=float, default=None, help="Dropout rate")
 
@@ -61,6 +63,7 @@ def parse_params():
         conf['prep_params']['ts_params']['num_fut'] = args.num_fut
     if args.nan_percentage is not None:
         conf['path_params']['nan_percentage'] = args.nan_percentage
+    conf["prep_params"]["data_seed"] = args.data_seed
 
     conf["model_params"]["nn_params"]["is_null_embedding"] = args.is_null_embedding
 
@@ -77,6 +80,8 @@ def parse_params():
         if fff[-1] == 1:
             fff = fff[:-1]
         conf['model_params']['nn_params']['fff'] = fff
+    if args.num_layers is not None:
+        conf['model_params']['nn_params']['num_layers'] = args.num_layers
 
     if args.lr is not None:
         conf['model_params']['lr'] = args.lr
@@ -228,7 +233,8 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, scaler_ty
 
     train_end_excl = pd.to_datetime(eval_params["valid_start"]).date()
 
-    ts_dict = apply_iqr_masker(ts_dict, cols, train_end_excl)
+    ts_dict = apply_iqr_masker_by_stn(ts_dict, cols, train_end_excl)
+    # ts_dict = apply_iqr_masker(ts_dict, cols, train_end_excl)
 
     nan, tot = 0, 0
     for stn in ts_dict:
@@ -350,12 +356,11 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, scaler_ty
 
 if __name__ == '__main__':
     path_params, prep_params, eval_params, model_params = parse_params()
-    _seed = model_params['seed']
-    if _seed is not None:
-        random.seed(_seed)
-        np.random.seed(_seed)
+    seed = prep_params['data_seed']
+    random.seed(seed)
+    np.random.seed(seed)
 
-    data_dir = './output/pickle' + ('_seed' + str(_seed) if _seed != 42 else '')
+    data_dir = './output/pickle' + ('_seed' + str(seed) if seed != 42 else '')
 
     os.makedirs(data_dir, exist_ok=True)
 
@@ -372,6 +377,7 @@ if __name__ == '__main__':
     num_spt = prep_params['spt_params']['num_spt']
 
     out_name = f"{path_params['type']}_{subset}_nan{int(nan_percentage * 10)}_np{num_past}_nf{num_fut}"
+    out_name += "_iqr"
     print('out_name:', out_name)
     pickle_path = os.path.join(data_dir, f"{out_name}.pickle")
 

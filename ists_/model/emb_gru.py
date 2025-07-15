@@ -1,8 +1,8 @@
 import numpy as np
 import tensorflow as tf
 
-from ists.model.embedding import TemporalEmbedding
-from ists.model.model import FinalLayersGRU
+from ists_.model.embedding import TemporalEmbedding
+from ists_.model.model import PredictorGRU
 
 
 class EmbGRUModel(tf.keras.Model):
@@ -70,14 +70,14 @@ class EmbGRUModel(tf.keras.Model):
                 self.emb = tf.keras.layers.Lambda(lambda x: x)
             self.dropout = tf.keras.layers.Lambda(lambda x: x)
 
-        self.final_layers = FinalLayersGRU(fff, dropout_rate, l2_reg)
+        self.final_layers = PredictorGRU(fff, dropout_rate, l2_reg)
 
     def split_data_attn_mask(self, x):
         if self.null_id is None:
             return x, None
         ids_to_keep = [*range(x.shape[-1])]
         ids_to_keep.remove(self.null_id)
-        return tf.gather(x, ids_to_keep, axis=-1), 1 - tf.gather(x, self.null_id, axis=-1)
+        return tf.gather(x, ids_to_keep, axis=-1), tf.gather(x, self.null_id, axis=-1)
 
     def call(self, inputs, **kwargs):
         exg_x, spt_x = inputs[0], inputs[1]  # (b, v, t, f)
@@ -92,11 +92,10 @@ class EmbGRUModel(tf.keras.Model):
         if self.null_id is None:
             m = tf.zeros_like(x)[:, :, 0:0, 0]  # (b, t, 0)
         else:
-            m = 1 - tf.gather(x, [self.null_id], axis=-1)  # (b, t, v, 1)
-            m = tf.squeeze(m, axis=-1)  # (b, t, v)
+            m = tf.gather(x, self.null_id, axis=-1)
         x = tf.gather(x, [self.feat_id], axis=-1)  # (b, t, v, 1)
         x = tf.squeeze(x, axis=-1)  # (b, t, v)
-        x = tf.concat([x, m, t], axis=-1)  # (b, t, v + 1) if null_id is None else (b, t, v*2 + 1)
+        x = tf.concat([x, m, t], axis=-1)  # (b, t, v + 1) if attn_mask_id is None else (b, t, v*2 + 1)
 
         x = self.emb(x)
         x = self.dropout(x)

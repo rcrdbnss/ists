@@ -10,6 +10,7 @@ import pandas as pd
 import tensorflow as tf
 
 from data_step import parse_params, data_step
+from ists_.preprocessing import TIME_N_VALUES
 
 
 def no_ablation(train_test_dict) -> dict:
@@ -26,7 +27,7 @@ def ablation_embedder_no_feat(train_test_dict, code) -> dict:
     train_test_dict['x_feat_mask'] = [x for x in train_test_dict['x_feat_mask'] if x != code]
 
     if code == 1:
-        train_test_dict['model_params']['nn_params']['is_null_embedding'] = False
+        train_test_dict['params']['model_params']['nn_params']['is_null_embedding'] = False
 
     if code == 2:
         train_test_dict['params']["prep_params"]["feat_params"]['time_feats'] = None
@@ -156,7 +157,6 @@ def ablation_no_global_encoder(train_test_dict) -> dict:
 
 def ablation_multivariate(train_test_dict) -> dict:
     train_test_dict['params']['model_params']['model_type'] = 'stt_mv'
-    # train_test_dict['params']['model_params']['univar_or_multivar'] = 'multivar'
     train_test_dict['params']['model_params']['multivar'] = True
     return train_test_dict
 
@@ -205,7 +205,30 @@ def ablation_stt_2(train_test_dict) -> dict:
     return train_test_dict
 
 
-def apply_ablation_code(abl_code: str, train_test_dict):
+def ablation_impute_mean(train_test_dict) -> dict:
+    for n in ['train', 'test', 'valid']:
+        X = train_test_dict[f'x_{n}']
+        X[:, :, 0][X[:, :, 1].astype(bool)] = 0.
+        for X in train_test_dict[f'spt_{n}']:
+            X[:, :, 0][X[:, :, 1].astype(bool)] = 0.
+        for X in train_test_dict[f'exg_{n}']:
+            X[:, :, 0][X[:, :, 1].astype(bool)] = 0.
+    return train_test_dict
+
+
+def scale_time_features(x, feature_mask, time_features):
+    if time_features is None:
+        return x
+    time_ids = np.where(feature_mask == 2)[0]
+    assert len(time_ids) == len(time_features)
+    for i, t in zip(time_ids, time_features):
+        t_max = TIME_N_VALUES[t] - 1  # 0-indexed
+        x[:, :, i] = x[:, :, i] / t_max - 0.5
+        assert np.all(x[:, :, i] >= -0.5) and np.all(x[:, :, i] <= 0.5)
+    return x
+
+
+def apply_ablation_code(abl_code: str, D):
     T, S, E = 'T' in abl_code, 'S' in abl_code, 'E' in abl_code
     n, t = 'n' in abl_code, 't' in abl_code
     abl_1 = '1' in abl_code
@@ -218,37 +241,56 @@ def apply_ablation_code(abl_code: str, train_test_dict):
     abl_8 = '8' in abl_code
     abl_9 = '9' in abl_code
 
-    train_test_dict['params']['model_params']['model_type'] = "sttN"
+    def _scale_time_features():
+        feature_mask = np.array(D['x_feat_mask'])
+        time_features = D['params']["prep_params"]["feat_params"]['time_feats']
+        for split in ['train', 'test', 'valid']:
+            D[f'x_{split}'] = scale_time_features(D[f'x_{split}'], feature_mask, time_features)
+            D[f'spt_{split}'] = [scale_time_features(x, feature_mask, time_features) for x in D[f'spt_{split}']]
+            D[f'exg_{split}'] = [scale_time_features(x, feature_mask, time_features) for x in D[f'exg_{split}']]
+        return D
+
+    D['params']['model_params']['model_type'] = "sttN"
 
     if S and E:
         T = False  # no need to force the target series in anymore
     if abl_1:
-        train_test_dict['params']['model_params']['model_type'] = "baseline"
+        D['params']['model_params']['model_type'] = "baseline"
         n = False
     if abl_2:
-        train_test_dict['params']['model_params']['nn_params']['do_emb'] = False
+        D['params']['model_params']['nn_params']['do_emb'] = False
+        D['params']['model_params']['nn_params']['num_heads'] = 1
+        D = _scale_time_features()
     if abl_3:
-        train_test_dict['params']['model_params']['encoder_layer_cls'] = 'EncoderAttnMaskLayer'
+        D['params']['model_params']['encoder_layer_cls'] = 'MVEncoderLayer'
+    if abl_4:
+        D['params']['model_params']['nn_params']['predictor_cls'] = "PredictorFlatten"
     if abl_5:
         n = False
     if abl_6:
-        train_test_dict['params']['model_params']['model_type'] = "baseline"
+        D['params']['model_params']['model_type'] = "baseline"
         n = False
-        train_test_dict['params']['model_params']['nn_params']['do_emb'] = False
+        D['params']['model_params']['nn_params']['do_emb'] = False
+        D['params']['model_params']['nn_params']['num_heads'] = 1
+        D = _scale_time_features()
     if abl_7:
-        train_test_dict['params']['model_params']['model_type'] = "baseline"
-        train_test_dict['params']['model_params']['nn_params']['do_emb'] = False
+        D['params']['model_params']['model_type'] = "baseline"
+        D['params']['model_params']['nn_params']['do_emb'] = False
+        D['params']['model_params']['nn_params']['num_heads'] = 1
+        D = _scale_time_features()
     if abl_8:
-        train_test_dict['params']['model_params']['model_type'] = "baseline"
+        D['params']['model_params']['model_type'] = "baseline"
     if abl_9:
-        train_test_dict['params']['model_params']['model_type'] = "emb_gru"
+        D['params']['model_params']['model_type'] = "emb_gru"
 
     if not n:
-        train_test_dict = ablation_embedder_no_feat(train_test_dict, 1)
+        D = ablation_embedder_no_feat(D, 1)
+    if not t:
+        D = ablation_embedder_no_feat(D, 2)
 
-    train_test_dict['params']['model_params']['nn_params']['do_exg'] = E
-    train_test_dict['params']['model_params']['nn_params']['do_spt'] = S
-    train_test_dict['params']['model_params']['nn_params']['force_target'] = T
+    D['params']['model_params']['nn_params']['do_exg'] = E
+    D['params']['model_params']['nn_params']['do_spt'] = S
+    D['params']['model_params']['nn_params']['force_target'] = T
 
     abl_code = []
 
@@ -274,7 +316,7 @@ def apply_ablation_code(abl_code: str, train_test_dict):
     if abl_9: abl_code.append('9')
 
     abl_code = '_'.join(abl_code)
-    return abl_code, train_test_dict
+    return abl_code, D
 
 
 from pipeline import model_step
@@ -362,9 +404,10 @@ def get_suffix(train_test_dict):
             suffix.append(f'lr{lr:.0e}')
 
     time_feats = train_test_dict['params']['prep_params']['feat_params']['time_feats']
-    time_feats = tuple(sorted(time_feats))
-    if time_feats != tuple(sorted(defaults['time_feats'][dataset])):
-        suffix.append('_'.join(time_feats))
+    if time_feats:
+        time_feats = tuple(sorted(time_feats))
+        if time_feats != tuple(sorted(defaults['time_feats'][dataset])):
+            suffix.append('+'.join(time_feats))
 
     if tf.__version__ != defaults['tf']:
         suffix.append(f'tf{tf.__version__.replace(".", "")}')
@@ -375,20 +418,81 @@ def get_suffix(train_test_dict):
     return '_'.join(suffix)
 
 
-def ablation(
-        train_test_dict: dict,
-        results_path: str,
-        pickle_path: str,
-        checkpoint_path: str,
-        ablation_embedder: bool = True,
-        ablation_encoder: bool = True,
-        ablation_extra: dict = None
-):
-    suffix = get_suffix(train_test_dict)
+def null_indicator_to_mask(train_test_dict):
+    null_id = np.where(np.array(train_test_dict['x_feat_mask']) == 1)[0]
+    if len(null_id) == 0:
+        return train_test_dict
+    for n in ['train', 'test', 'valid']:
+        X = train_test_dict[f'x_{n}']
+        X[:, :, null_id] = 1 - X[:, :, null_id]
+        for X in train_test_dict[f'spt_{n}']:
+            X[:, :, null_id] = 1 - X[:, :, null_id]
+        for X in train_test_dict[f'exg_{n}']:
+            X[:, :, null_id] = 1 - X[:, :, null_id]
+    return train_test_dict
 
+
+def sample_aux_mask(train_test_dict, rate=0.1):
+
+    def _sample_aux_mask(mask):
+        num_to_mask = max(1, round(len(mask) * rate))
+
+        real_indices = np.where(mask == 1)[0]
+        if len(real_indices) < num_to_mask:
+            # Not enough real values to mask the required number
+            selected = real_indices  # Mask all that are available
+        else:
+            selected = np.random.choice(real_indices, size=num_to_mask, replace=False)
+
+        aux_mask = np.zeros_like(mask)
+        aux_mask[selected] = 1
+        return aux_mask
+
+    def _apply_sample_aux_mask(X):
+        mask = X[:, :, null_id]
+        aux_mask = []
+        for b in range(mask.shape[0]):
+            aux_mask.append(_sample_aux_mask(mask[b]))
+        aux_mask = np.array(aux_mask)[:, :, np.newaxis]
+        X = np.concatenate([X, aux_mask], axis=2)
+        return X
+
+    null_id = np.where(np.array(train_test_dict['x_feat_mask']) == 1)[0]
+    if len(null_id) == 0:
+        return train_test_dict
+    null_id = null_id[0]  # Assuming only one null feature for simplicity
+    for split in ['train', 'test', 'valid']:
+        X = train_test_dict[f'x_{split}']
+        X = _apply_sample_aux_mask(X)
+        train_test_dict[f'x_{split}'] = X
+
+        for i in range(len(train_test_dict[f'spt_{split}'])):
+            X = train_test_dict[f'spt_{split}'][i]
+            X = _apply_sample_aux_mask(X)
+            train_test_dict[f'spt_{split}'][i] = X
+
+        for i in range(len(train_test_dict[f'exg_{split}'])):
+            X = train_test_dict[f'exg_{split}'][i]
+            X = _apply_sample_aux_mask(X)
+            train_test_dict[f'exg_{split}'][i] = X
+    return train_test_dict
+
+
+def ablation(
+        # train_test_dict: dict,
+        pickle_file: str,
+        results_file: str,
+        checkpoint_basedir: str,
+        path_params: dict,
+        prep_params: dict,
+        eval_params: dict,
+        model_params: dict,
+):
     ablations_mapping = [
-        'E_nt',
+        # 'E_nt',
+        'E_n',
         # 'E_t',
+        # 'E',
         # 'E_nt_1',
         # 'E_nt_2',
         # 'E_nt_3',
@@ -397,61 +501,129 @@ def ablation(
         # 'E_nt_7',
         # 'E_nt_8',
         # 'E_nt_9',
+        # 'E_nt_A',
     ]
 
     for name in ablations_mapping:
-        name, D = apply_ablation_code(name, deepcopy(train_test_dict))
+        print('Loading from', pickle_file, '...', end='', flush=True)
+        with open(pickle_file, "rb") as f:
+            train_test_dict = pickle.load(f)
+        print(' done!')
+        train_test_dict['params'] = {
+            'path_params': deepcopy(path_params),
+            'prep_params': deepcopy(prep_params),
+            'eval_params': deepcopy(eval_params),
+            'model_params': deepcopy(model_params),
+        }
+        train_test_dict = null_indicator_to_mask(train_test_dict)
+
+        name, train_test_dict = apply_ablation_code(name, train_test_dict)
+        seed = model_params['seed']
+        data_seed = prep_params['data_seed']
+        random.seed(seed)
+        np.random.seed(seed)
+        tf.random.set_seed(seed)
+        name += f"_d{data_seed}_s{seed}"
+
+        suffix = get_suffix(train_test_dict)
         if suffix: name = f"{name}#{suffix}"
         if '#' not in name:
             name += '#'
+
+        train_test_dict['params']['model_params']['model_type'] = "istf_cls"
+        name += '_CLS'
+
+        """train_test_dict['params']['model_params']['model_type'] = "istf_interp_cls"
+        name += '_InterpCLS'
+        train_test_dict = sample_aux_mask(train_test_dict, rate=0.1)"""
+
+        """train_test_dict['params']['model_params']['model_type'] = "istf_avgpool"
+        name += '_AttnPool'"""
+
+        # name += "+AvgPool"
+        # name += "+AttnPool"
+        name += "_SW"  # shared weights
+        # name += "_IV"  # I: shared weights + embedder w/o regularizing small layer, II: shared weights, III: shared weights + no CLS in global attention
+        # name += "_iqr"
+        # name += "_sk"
+        # name += "_Mean"
+        # name += "_Intp5"
+        # name += "_Recn"
+        # name += "_Aux_SF_dro"
+        # name += "_Aux_dro"
+        # name += '_NoStatic'
+        # name += "_TFW"
+        # name += "_R1"  # 1 regressor for multiple outputs
+        name += "_KMask1+2"
+        name += "_LVEmb6"
+        name += "_PredAll"
+        # name += "_CycleTP"
+
+        """train_test_dict['params']['model_params']['encoder_cls'] = "ParallelEncoder"
+        name += '_P'"""
+
         if name.endswith('#'):
             name = name[:-1]
+        # train_test_dict = ablation_impute_mean(train_test_dict)
 
-        print(f"\n{name}: {D['params']['model_params']['model_type']}")
-        if D['params']['model_params']['seed'] != 42:
-            name += '_seed' + str(D['params']['model_params']['seed'])
+        print(f"\n{name}: {train_test_dict['params']['model_params']['model_type']}")
+        # seed = model_params['seed']
+        # if seed is not None:
+        #     random.seed(seed)
+        #     np.random.seed(seed)
+        #     tf.random.set_seed(seed)
+        # if seed != 42:
+        #     name += '_seed' + str(train_test_dict['params']['model_params']['seed'])
 
-        """# grid results
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        checkpoint_path += "/" + timestamp
-        os.makedirs(checkpoint_path, exist_ok=True)"""
+        checkpoint_dir = checkpoint_basedir + "/" + timestamp
+        os.makedirs(checkpoint_dir, exist_ok=True)
 
-        model_res = model_step(D, D['params']['model_params'], checkpoint_path)
+        # if dataset is "french", remove the last exogenous variable in train, validation and test sets
+        '''if path_params['type'] == 'french':
+            """for n in ['train', 'test', 'valid']:
+                train_test_dict[f'exg_{n}'] = train_test_dict[f'exg_{n}'][:-1]"""
+            train_test_dict["params"]["model_params"]["nn_params"]["static_feats_start"] = -1'''
+
+        with open(checkpoint_dir + "/model_params.json", "w") as f:
+            _model_params = deepcopy(train_test_dict['params']['model_params'])
+            _model_params["name"] = name
+            json.dump(_model_params, f, indent=4)
+
+        res = model_step(train_test_dict, train_test_dict['params']['model_params'], checkpoint_dir)
 
         # non-grid results
-        if os.path.exists(results_path):
-            results = pd.read_csv(results_path, index_col=0).T.to_dict()
+        if os.path.exists(results_file):
+            results = pd.read_csv(results_file, index_col=0).T.to_dict()
         else:
             results = {}
-        results[name] = model_res
-        pd.DataFrame(results).T.to_csv(results_path, index=True)
+        results[name] = res
+        pd.DataFrame(results).T.to_csv(results_file, index=True)
 
         """# grid results
-        model_res["name"] = name
-        model_res["params"] = D["params"]["model_params"]
-        results_path = results_path.replace('.csv', '/')
+        import json
+        res["name"] = name
+        res["params"] = train_test_dict["params"]["model_params"]
+        results_path = results_file.replace('.csv', '/')
         os.makedirs(results_path, exist_ok=True)
         results_path += timestamp + '.json'
         with open(results_path, 'w') as f:
-            model_res["params"]["nn_params"]["null_max_size"] = int(model_res["params"]["nn_params"]["null_max_size"])
-            model_res["test_mae"] = float(model_res["test_mae"])
-            model_res["test_mse"] = float(model_res["test_mse"])
-            json.dump(model_res, f, indent=4)"""
+            # res["params"]["nn_params"]["null_max_size"] = int(res["params"]["nn_params"]["null_max_size"])
+            res["test_mae"] = float(res["test_mae"])
+            res["test_mse"] = float(res["test_mse"])
+            json.dump(res, f, indent=4)"""
 
 
 def main():
     path_params, prep_params, eval_params, model_params = parse_params()
     if model_params['cpu']:
         tf.config.set_visible_devices([], 'GPU')
-    _seed = model_params['seed']
-    if _seed is not None:
-        random.seed(_seed)
-        np.random.seed(_seed)
-        tf.random.set_seed(_seed)
+    seed = model_params['seed']
+    data_seed = prep_params['data_seed']
 
     results_dir = './output/results'
-    pickle_dir = './output/pickle' + ('_seed' + str(_seed) if _seed != 42 else '')
-    model_dir = './output/model' + ('_seed' + str(_seed) if _seed != 42 else '')
+    pickle_dir = './output/pickle' + ('_seed' + str(data_seed) if data_seed != 42 else '')
+    model_dir = './output/model' + ('_seed' + str(seed) if seed != 42 else '')
 
     os.makedirs(results_dir, exist_ok=True)
     os.makedirs(pickle_dir, exist_ok=True)
@@ -469,47 +641,33 @@ def main():
     num_fut = prep_params['ts_params']['num_fut']
 
     conf_name = f"{path_params['type']}_{subset}_nan{int(nan_percentage * 10)}_np{num_past}_nf{num_fut}"
+    conf_name += "_iqr"
     print('configuration:', conf_name)
-    results_file = os.path.join(results_dir, f"{conf_name}.csv")
+    # results_file = os.path.join(results_dir, f"{conf_name}.csv")
+    results_file = os.path.join(results_dir, f"{conf_name}_mse.csv")
     pickle_file = os.path.join(pickle_dir, f"{conf_name}.pickle")
     checkpoint_dir = os.path.join(model_dir, conf_name)
 
-    if os.path.exists(pickle_file) and not path_params['force_data_step']:
-        print('Loading from', pickle_file, '...', end='', flush=True)
-        with open(pickle_file, "rb") as f:
-            train_test_dict = pickle.load(f)
-        print(' done!')
-    else:
-    # if True:
+    if path_params['force_data_step'] or not os.path.exists(pickle_file):
+        random.seed(data_seed)
+        np.random.seed(data_seed)
         train_test_dict = data_step(
             path_params, prep_params, eval_params, scaler_type=model_params['transform_type']
         )
-
         with open(pickle_file, "wb") as f:
             print('Saving to', pickle_file, '...', end='', flush=True)
             pickle.dump(train_test_dict, f)
             print(' done!')
-
-    train_test_dict['params'] = {
-        'path_params': path_params,
-        'prep_params': prep_params,
-        'eval_params': eval_params,
-        'model_params': model_params,
-    }
+        del train_test_dict
 
     ablation(
-        train_test_dict=train_test_dict,
-        results_path=results_file,
-        pickle_path=pickle_file,
-        checkpoint_path=checkpoint_dir,
-        ablation_embedder=True,
-        ablation_encoder=True,
-        ablation_extra={
-            'TS_FE': ablation_encoder_ts_fe,
-            'STT_SE': ablation_encoder_stt_se,
-            'SE_SE': ablation_encoder_se_se,
-            'STT_MTS_E': ablation_encoder_stt_mts_e,
-        }
+        pickle_file=pickle_file,
+        results_file=results_file,
+        checkpoint_basedir=checkpoint_dir,
+        path_params=path_params,
+        prep_params=prep_params,
+        eval_params=eval_params,
+        model_params=model_params,
     )
 
     print('Hello World!')

@@ -12,6 +12,7 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from tqdm import tqdm
 
 from ..utils import move_to_end_of_week_or_month, insert_nulls_max_consecutive_thr
+from ...preparation import reindex_ts
 
 
 class ContextType(TypedDict):
@@ -53,6 +54,8 @@ def read_piezo(filename: str, id_col: str, date_col: str, cols: List[str]) -> Di
     df[date_col] = df[date_col].apply(lambda x: move_to_end_of_week_or_month(x, 'M'))
 
     ts_dict = create_ts_dict(df=df, id_col=id_col, date_col=date_col, cols=cols)
+
+    ts_dict = {stn: reindex_ts(data, 'M') for stn, data in ts_dict.items()}
 
     return ts_dict
 

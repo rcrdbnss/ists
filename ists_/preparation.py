@@ -37,11 +37,13 @@ def prepare_train_test(
         exg_array: List[np.ndarray],
         test_start: str,
         valid_start: str,
-        spt_dict: dict
+        spt_dict: dict[str, pd.Series]
 ) -> dict:
     is_train = time_array[:, -1] < pd.to_datetime(valid_start).date()
     is_valid = (time_array[:, -1] >= pd.to_datetime(valid_start).date()) & (time_array[:, -1] < pd.to_datetime(test_start).date())
     is_test = (time_array[:, -1] >= pd.to_datetime(test_start).date())
+
+    spt_dict = {k: v.to_dict() for k, v in spt_dict.items()}
 
     res = {
         'x_train': x_array[is_train],

@@ -6,8 +6,8 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 
-from ists.metrics import compute_metrics
-from ists.model.wrapper import ModelWrapper
+from ists_.metrics import compute_metrics
+from ists_.model.wrapper import ModelWrapper
 
 
 def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -> dict:
@@ -85,12 +85,14 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
     res_test = compute_metrics(y_true=y_true, y_preds=y_preds)
     res_test = {f'test_{k}': val for k, val in res_test.items()}
     res.update(res_test)
+    print(model.model.summary())
     print(res_test)
 
     res['loss'] = model.history.history['loss']
     res['val_loss'] = model.history.history['val_loss']
-    if 'test_loss' in model.history.history: res['test_loss'] = model.history.history['test_loss']
+    res['val_mse'] = model.history.history['val_mse']
     res['epoch_times'] = model.epoch_times
+
     return res
 
 
@@ -156,7 +158,8 @@ def main():
 
     selected_model = train_test_dict['params']['model_params']['model_type'][:3].upper()
 
-    results[selected_model] = model_step(train_test_dict, train_test_dict['params']['model_params'], checkpoint_path)
+    res = model_step(train_test_dict, train_test_dict['params']['model_params'], checkpoint_path)
+    results[selected_model] = res
 
     pd.DataFrame(results).T.to_csv(results_path, index=True)
 

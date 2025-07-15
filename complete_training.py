@@ -5,10 +5,12 @@ import pickle
 
 import numpy as np
 import pandas as pd
+import tensorflow as tf
+from sklearn.preprocessing import StandardScaler
 
 from ablation import apply_ablation_code
-from ists.metrics import compute_metrics
-from ists.model.wrapper import ModelWrapper
+from ists_.metrics import compute_metrics
+from ists_.model.wrapper import ModelWrapper
 
 
 def fit_with_dummy_data(
@@ -16,7 +18,6 @@ def fit_with_dummy_data(
         spt,
         exg,
         batch_size: int = 32,
-        # x_train_timedeltas=None,
 ):
     spt_shape, exg_shape = [*np.shape(spt)], [*np.shape(exg)]
     spt_shape[1], exg_shape[1] = spt_shape[0] + 1, exg_shape[0] + 1
@@ -25,9 +26,6 @@ def fit_with_dummy_data(
     exg = np.random.randn(*exg_shape)
     y = np.random.randn(batch_size, 1)
     X = [exg, spt]
-    # if x_train_timedeltas is not None:
-    #     x_train_timedeltas = x_train_timedeltas[:batch_size]
-    #     X.append(x_train_timedeltas)
     X = tuple(X)
 
     wrapper.model.fit(
@@ -40,10 +38,9 @@ def fit_with_dummy_data(
     )
 
 
-if __name__ == '__main__':
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-f', '--file', required=True, help='Path to the model params file')
-    # parser.add_argument('--dataset', required=True)
     parser.add_argument('--subset', default='all')
     parser.add_argument('--num-past', type=int, required=True, help='Number of past values to consider')
     parser.add_argument('--num-fut', type=int, required=True, help='Number of future values to predict')
@@ -70,9 +67,7 @@ if __name__ == '__main__':
 
     results_path = os.path.join(res_dir, f"{out_name}.csv")
     checkpoint_dir = os.path.join(model_dir, out_name)
-    # checkpoint_dir = os.path.join(checkpoint_basedir, 'best_model')
-    # # checkpoint_path = os.path.join(checkpoint_basedir, 'best_model', 'cp.ckpt.data-00000-of-00001')
-    checkpoint_path = os.path.join(checkpoint_dir, 'best_model', 'cp.weights.h5')
+    checkpoint_path = os.path.join(checkpoint_dir, '20250404_180755_723806', 'cp.weights.h5')
 
     print('Loading from', pickle_path, '...', end='')
     with open(pickle_path, "rb") as f:
@@ -93,12 +88,9 @@ if __name__ == '__main__':
 
     # Insert data params in nn_params for building the correct model
     nn_params['feature_mask'] = train_test_dict['x_feat_mask']
-    # nn_params['exg_feature_mask'] = train_test_dict['exg_feat_mask']
     nn_params['spatial_size'] = len(train_test_dict['spt_train']) + 1  # target
     nn_params['exg_size'] = len(train_test_dict['exg_train']) + 1  # target
-    nn_params['null_max_size'] = train_test_dict['null_max_size']
-    nn_params['time_max_sizes'] = train_test_dict['time_max_sizes']
-    # nn_params['exg_time_max_sizes'] = train_test_dict['exg_time_max_sizes']
+    nn_params["time_features"] = conf["prep_params"]["feat_params"]['time_feats']
     if 'encoder_cls' in model_params:
         nn_params['encoder_cls'] = model_params['encoder_cls']
     if 'encoder_layer_cls' in model_params:
@@ -119,23 +111,6 @@ if __name__ == '__main__':
         val_exg=train_test_dict['exg_valid'],
         val_y=train_test_dict['y_valid']
     )
-    test_args = {
-        'test_x': train_test_dict['x_test'],
-        'test_spt': train_test_dict['spt_test'],
-        'test_exg': train_test_dict['exg_test'],
-        'test_y': train_test_dict['y_test'],
-    }
-
-    # x_train_timedeltas = None
-    # fit_timedeltas, predict_timedeltas = dict(), dict()
-    # if 'x_train_timedeltas' in train_test_dict:
-    #     x_train_timedeltas = train_test_dict['x_train_timedeltas']
-    #     fit_timedeltas['x_train_timedeltas'] = x_train_timedeltas
-    # if 'x_valid_timedeltas' in train_test_dict:
-    #     fit_timedeltas['x_val_timedeltas'] = train_test_dict['x_valid_timedeltas']
-    # if 'x_test_timedeltas' in train_test_dict:
-    #     fit_timedeltas['x_test_timedeltas'] = train_test_dict['x_test_timedeltas']
-    #     predict_timedeltas['x_timedeltas'] = train_test_dict['x_test_timedeltas']
 
     fit_with_dummy_data(
         wrapper,
@@ -163,23 +138,26 @@ if __name__ == '__main__':
             y=train_test_dict['y_train'],
             epochs=args.epochs,
             batch_size=batch_size,
-            # validation_split=0.2,
             verbose=1,
             **valid_args,
-            **test_args,
-            # **fit_timedeltas,
             early_stop_patience=patience,
             checkpoint_threshold=val_loss_threshold
         )
 
     res = {}
     scalers = train_test_dict['scalers']
+    for id in scalers:
+        for f in scalers[id]:
+            if isinstance(scalers[id][f], dict):
+                scaler = StandardScaler()
+                for k, v in scalers[id][f].items():
+                    setattr(scaler, k, v)
+                scalers[id][f] = scaler
 
     preds = wrapper.predict(
         x=train_test_dict['x_test'],
         spt=train_test_dict['spt_test'],
         exg=train_test_dict['exg_test'],
-        # **predict_timedeltas
     )
 
     id_array = train_test_dict['id_test']
@@ -205,3 +183,18 @@ if __name__ == '__main__':
         name += '_'
     results[name] = res
     pd.DataFrame(results).T.to_csv(results_path, index=True)
+
+
+if __name__ == '__main__':
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus:
+        try:
+            # Currently, memory growth needs to be the same across GPUs
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            logical_gpus = tf.config.list_logical_devices('GPU')
+            print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+        except RuntimeError as e:
+            # Memory growth must be set before GPUs have been initialized
+            print(e)
+    main()
