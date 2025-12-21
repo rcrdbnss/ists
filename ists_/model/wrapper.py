@@ -8,8 +8,8 @@ import tensorflow as tf
 from .baseline import BaselineModel
 from .emb_gru import EmbGRUModel
 from .model import STTransformerSequentialAttnMask
-from .model_avgpool import IstfAvgPool
-from .model_cls import IstfCLS
+# from .model_avgpool import IstfAvgPool
+from .model_cls import ISTEncoderCLS, ISTForecastingCLS
 from .model_interp_cls import IstfInterpCLS
 
 
@@ -21,11 +21,12 @@ def get_model(model_type: str, model_params) -> tf.keras.Model:
     if model_type == 'emb_gru':
         return EmbGRUModel(**model_params)
     if model_type == "istf_cls":
-        return IstfCLS(**model_params)
+        encoder = ISTEncoderCLS(**model_params)
+        return ISTForecastingCLS(encoder)
     if model_type == 'istf_interp_cls':
         return IstfInterpCLS(**model_params)
-    if model_type == 'istf_avgpool':
-        return IstfAvgPool(**model_params)
+    # if model_type == 'istf_avgpool':
+    #     return IstfAvgPool(**model_params)
 
     raise ValueError(f'Model "{model_type}" is not supported')
 
@@ -86,7 +87,7 @@ class TimingCallback(tf.keras.callbacks.Callback):
         self.epoch_times.append(elapsed_time)
 
 
-class ModelWrapper(object):
+class ModelWrapper:
     def __init__(
             self,
             checkpoint_dir: str,
@@ -97,8 +98,6 @@ class ModelWrapper(object):
             dev = False
     ):
         self.checkpoint_dir = checkpoint_dir
-        self.checkpoint_path = os.path.join(self.checkpoint_dir, 'cp.weights.h5')
-        os.makedirs(self.checkpoint_dir, exist_ok=True)
 
         self.lr = lr
 
@@ -138,8 +137,10 @@ class ModelWrapper(object):
         spt = self._get_spatial_array(x, spt)
         exg = self._get_spatial_array(x, exg)
 
+        checkpoint_path = os.path.join(self.checkpoint_dir, 'cp.weights.h5')
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
         model_checkpoint = tf.keras.callbacks.ModelCheckpoint(
-            self.checkpoint_path,
+            checkpoint_path,
             # monitor='val_loss',
             monitor='val_mse',
             save_best_only=True,
@@ -198,12 +199,13 @@ class ModelWrapper(object):
             verbose=verbose,
             callbacks=callbacks
         )
+        self.model.summary(expand_nested=True)
         self.epoch_times = timing_callback.epoch_times
 
         # Load best model
-        self.model.load_weights(self.checkpoint_path)
+        self.model.load_weights(checkpoint_path)
         self.model.save(self.checkpoint_dir + '/model.keras')
-        os.remove(self.checkpoint_path)
+        os.remove(checkpoint_path)
 
     def predict(
             self, x: np.ndarray,

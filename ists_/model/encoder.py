@@ -5,7 +5,7 @@ class BaseAttention(tf.keras.layers.Layer):
     def __init__(self, **kwargs):
         super().__init__()
         self.mha = tf.keras.layers.MultiHeadAttention(**kwargs)
-        self.layernorm = tf.keras.layers.LayerNormalization()
+        self.layernorm = tf.keras.layers.LayerNormalization() #rms_scaling=True)
         self.add = tf.keras.layers.Add()
 
 
@@ -13,6 +13,7 @@ class CrossAttention(BaseAttention):
     last_attn_scores = None
 
     def call(self, x, context, attention_mask=None):
+        y = 1/0  # raise error
         attn_output, attn_scores = self.mha(
             query=x,
             key=context,
@@ -34,10 +35,12 @@ class GlobalSelfAttention(BaseAttention):
     last_attn_scores = None
 
     def call(self, x, attention_mask=None):
+        y = x
+        # y = self.layernorm(y)
         attn_output, attn_scores = self.mha(
-            query=x,
-            key=x,
-            value=x,
+            query=y,
+            key=y,
+            value=y,
             return_attention_scores=True,
             attention_mask=attention_mask
         )
@@ -61,10 +64,12 @@ class FeedForward(tf.keras.layers.Layer):
             tf.keras.layers.Dropout(dropout_rate)
         ])
         self.add = tf.keras.layers.Add()
-        self.layer_norm = tf.keras.layers.LayerNormalization()
+        self.layer_norm = tf.keras.layers.LayerNormalization() #rms_scaling=True)
 
     def call(self, x, **kwargs):
-        x = self.add([x, self.seq(x)])
+        y = x
+        # y = self.layer_norm(y)
+        x = self.add([x, self.seq(y)])
         x = self.layer_norm(x)
         return x
 
@@ -79,7 +84,8 @@ class EncoderLayer(tf.keras.layers.Layer):
 
         self.self_attention = GlobalSelfAttention(
             num_heads=num_heads,
-            key_dim=d_model,
+            # key_dim=d_model,
+            key_dim=d_model // num_heads,
             dropout=dropout_rate,
             **reg
         )
@@ -100,7 +106,7 @@ class EncoderLayer(tf.keras.layers.Layer):
         return x
 
 
-class CrossEncoderLayer(tf.keras.layers.Layer):
+"""class CrossEncoderLayer(tf.keras.layers.Layer):
 
     def __init__(self, *, d_model, num_heads, dff, activation='relu', dropout_rate=0.1, l2_reg=None):
         super(CrossEncoderLayer, self).__init__()
@@ -135,7 +141,7 @@ class CrossEncoderLayer(tf.keras.layers.Layer):
         self.last_attn_scores = self.cross_attention.last_attn_scores
 
         x = self.ffn(x)  # Shape `(batch_size, seq_len, d_model)`.
-        return x
+        return x"""
 
 
 class MVEncoderLayer(tf.keras.layers.Layer):

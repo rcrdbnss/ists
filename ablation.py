@@ -1,4 +1,4 @@
-import datetime
+from datetime import datetime
 import json
 import os
 import pickle
@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 
-from data_step import parse_params, data_step
+from data_step import parse_params, data_step, get_conf_name
 from ists_.preprocessing import TIME_N_VALUES
 
 
@@ -41,12 +41,33 @@ def ablation_embedder_no_time(train_test_dict) -> dict:
 
 
 def ablation_embedder_no_null(train_test_dict) -> dict:
-    train_test_dict = ablation_embedder_no_feat(train_test_dict, 1)
+    """
+    Instead of removing the attention mask, set it to 1 everywhere.
+    """
+
+    # train_test_dict = ablation_embedder_no_feat(train_test_dict, 1)
+
+    null_id = np.where(np.array(train_test_dict['x_feat_mask']) == 1)[0]
+    if len(null_id) == 0:
+        return train_test_dict
+    null_id = null_id[0]  # Assuming only one null feature for simplicity
+    for n in ['train', 'test', 'valid']:
+        X = train_test_dict[f'x_{n}']
+        X[:, :, null_id] = 1.0  # Set the null feature to 1
+        for i in range(len(train_test_dict[f'spt_{n}'])):
+            X = train_test_dict[f'spt_{n}'][i]
+            X[:, :, null_id] = 1.0
+            train_test_dict[f'spt_{n}'][i] = X
+        for i in range(len(train_test_dict[f'exg_{n}'])):
+            X = train_test_dict[f'exg_{n}'][i]
+            X[:, :, null_id] = 1.0
+            train_test_dict[f'exg_{n}'][i] = X
     return train_test_dict
 
 
 def ablation_embedder_no_time_null(train_test_dict) -> dict:
-    train_test_dict = ablation_embedder_no_feat(train_test_dict, 1)
+    # train_test_dict = ablation_embedder_no_feat(train_test_dict, 1)
+    train_test_dict = ablation_embedder_no_null(train_test_dict)
     train_test_dict = ablation_embedder_no_feat(train_test_dict, 2)
     return train_test_dict
 
@@ -322,7 +343,7 @@ def apply_ablation_code(abl_code: str, D):
 from pipeline import model_step
 
 
-def get_suffix(train_test_dict):
+"""def get_suffix(train_test_dict):
     defaults = {
         'num_layers': 1,
         'l2_reg': 0.01,
@@ -335,13 +356,14 @@ def get_suffix(train_test_dict):
         'epochs': 100,
         'patience': 20,
         'lr': {
-            'french': 0.0004, 'ushcn': 0.00004, 'adbpo': 0.0004,
+            'french': 0.0004, 'ushcn': 0.0004, 'adbpo': 0.0004,
         },
         'tf': '2.17.0',
         'd_model': {
             'french': 64, 'ushcn': 64, 'adbpo': 32
         },
-        'num_heads': { 'french': 4, 'ushcn': 4, 'adbpo': 2
+        'num_heads': {
+            'french': 4, 'ushcn': 4, 'adbpo': 2
         },
         'dff': {
             'french': 128, 'ushcn': 128, 'adbpo': 64,
@@ -415,6 +437,45 @@ def get_suffix(train_test_dict):
     if train_test_dict["params"]["model_params"]["nn_params"]["is_null_embedding"]:
         suffix.append("Nemb")
 
+    return '_'.join(suffix)"""
+
+
+def get_suffix(train_test_dict):
+    def to_scientific_notation(number):
+        mantissa, exponent = f"{number:.0e}".split("e")
+        return float(mantissa), int(exponent)
+
+    suffix = []
+
+    num_layers = train_test_dict['params']['model_params']['nn_params']['num_layers']
+    suffix.append(f'encs{num_layers}')
+    d_model = train_test_dict['params']['model_params']['nn_params']['d_model']
+    suffix.append(f'd{d_model}')
+    num_heads = train_test_dict['params']['model_params']['nn_params']['num_heads']
+    suffix.append(f'h{num_heads}')
+    dff = train_test_dict['params']['model_params']['nn_params']['dff']
+    suffix.append(f'dff{dff}')
+
+    dropout_rate = train_test_dict['params']['model_params']['nn_params']['dropout_rate']
+    suffix.append(f'dro{int(dropout_rate * 10)}')
+
+    l2_reg = train_test_dict['params']['model_params']['nn_params']['l2_reg']
+    m, e = to_scientific_notation(l2_reg)
+    suffix.append(f'reg{int(m)}e{"+" if e > 0 else ""}{e}')
+    lr = train_test_dict['params']['model_params']['lr']
+    m, e = to_scientific_notation(lr)
+    suffix.append(f'lr{int(m)}e{"+" if e > 0 else ""}{e}')
+
+    epochs = train_test_dict['params']['model_params']['epochs']
+    suffix.append(f'e{epochs}')
+    patience = train_test_dict['params']['model_params']['patience']
+    suffix.append(f'pat{patience}')
+
+    time_feats = train_test_dict['params']['prep_params']['feat_params']['time_feats']
+    if time_feats:
+        time_feats = tuple(sorted(time_feats))
+        suffix.append('+'.join(time_feats))
+
     return '_'.join(suffix)
 
 
@@ -432,7 +493,7 @@ def null_indicator_to_mask(train_test_dict):
     return train_test_dict
 
 
-def sample_aux_mask(train_test_dict, rate=0.1):
+"""def sample_aux_mask(train_test_dict, rate=0.1):
 
     def _sample_aux_mask(mask):
         num_to_mask = max(1, round(len(mask) * rate))
@@ -475,7 +536,7 @@ def sample_aux_mask(train_test_dict, rate=0.1):
             X = train_test_dict[f'exg_{split}'][i]
             X = _apply_sample_aux_mask(X)
             train_test_dict[f'exg_{split}'][i] = X
-    return train_test_dict
+    return train_test_dict"""
 
 
 def ablation(
@@ -489,8 +550,8 @@ def ablation(
         model_params: dict,
 ):
     ablations_mapping = [
-        # 'E_nt',
-        'E_n',
+        'E_nt',
+        # 'E_n',
         # 'E_t',
         # 'E',
         # 'E_nt_1',
@@ -530,34 +591,82 @@ def ablation(
         if '#' not in name:
             name += '#'
 
-        train_test_dict['params']['model_params']['model_type'] = "istf_cls"
-        name += '_CLS'
+        """train_test_dict['params']['model_params']['model_type'] = "istf_cls"
+        name += '_CLS'"""
 
         """train_test_dict['params']['model_params']['model_type'] = "istf_interp_cls"
-        name += '_InterpCLS'
-        train_test_dict = sample_aux_mask(train_test_dict, rate=0.1)"""
+        name += '_PretrCLS'
+        # train_test_dict = sample_aux_mask(train_test_dict, rate=0.1)"""
 
-        """train_test_dict['params']['model_params']['model_type'] = "istf_avgpool"
-        name += '_AttnPool'"""
+        train_test_dict['params']['model_params']['model_type'] = "istf_attnpool"
+        name += '_AttnPool'
+        # name += '_MeanPool'
+        # train_test_dict = sample_aux_mask(train_test_dict, rate=0.1)
 
-        # name += "+AvgPool"
-        # name += "+AttnPool"
-        name += "_SW"  # shared weights
+        with open(pickle_file.replace(".pickle", "_aux.pickle"), "rb") as f:
+            train_test_dict_aux = pickle.load(f)
+        keep_ids = np.where(np.isin(train_test_dict['x_feat_mask'], [0, 1]))[0]
+        for n in ['train', 'test', 'valid']:
+            def _f(D, D_aux, key, i=None):
+                if i is not None:
+                    X = D[key][i]
+                    X_aux = D_aux[key][i][:, :, keep_ids]
+                    D[key][i] = np.concatenate([X, X_aux], axis=2)
+                    return D
+                X = D[key]
+                X_aux = D_aux[key][:, :, keep_ids]
+                D[key] = np.concatenate([X, X_aux], axis=2)
+                return D
+            train_test_dict = _f(train_test_dict, train_test_dict_aux, f'x_{n}')
+            for i in range(len(train_test_dict[f'spt_{n}'])):
+                train_test_dict = _f(train_test_dict, train_test_dict_aux, f'spt_{n}', i)
+            for i in range(len(train_test_dict[f'exg_{n}'])):
+                train_test_dict = _f(train_test_dict, train_test_dict_aux, f'exg_{n}', i)
+
+        # name += "+NoMask"
+        # name += "+Mean"
+        # name += "+bias"
+        name += "_SW" if train_test_dict['params']['model_params']['nn_params']['shared_weights'] else ""  # shared weights
         # name += "_IV"  # I: shared weights + embedder w/o regularizing small layer, II: shared weights, III: shared weights + no CLS in global attention
         # name += "_iqr"
-        # name += "_sk"
+        name += "_sk500"  # scheduler options: sk4000, sk6e, skNoam1K
         # name += "_Mean"
         # name += "_Intp5"
         # name += "_Recn"
         # name += "_Aux_SF_dro"
-        # name += "_Aux_dro"
+        # name += "_Aux1PF"  # _Aux1PF
         # name += '_NoStatic'
+        # name += "_Static2"  # StaticEmb, Static2
         # name += "_TFW"
         # name += "_R1"  # 1 regressor for multiple outputs
-        name += "_KMask1+2"
-        name += "_LVEmb6"
-        name += "_PredAll"
-        # name += "_CycleTP"
+        # name += "_KMask"  # +GAwithCLS, +GAnoCLS, +CLSAttn
+        name += "_LVEmbS+"  # Learnable VarEmbs initialized as regular simplex + learnable scale
+        # name += "_PredAll"
+        # name += "_Add2Enc"
+        # name += "_LGSW"  # Local Global Shared Weights
+        # name += "_PtMean"  # Pretrain Mean
+        # name += "_H"  # multi-head attention like torch
+        # name += "_k1"
+        # name += "_regEmb" + str(train_test_dict['params']['model_params']['nn_params']['l2_reg'] * 10).replace('0.', '')
+        # name += "_noWu"  # no warmup
+        # name += "_CLSnoPE"  # no positional encoding for the CLS token
+        # name += "_Pt100eFIX" if train_test_dict['params']['model_params']['pretrain'] else "_Ft"
+        name += "_Pt" if train_test_dict['params']['model_params']['pretrain'] else ""
+        # name += "Load"
+        name += "+Loss0.3obs+0.1avg"  # loss weights
+        # name += "_wu10e"
+        name += "_Ft"
+        name += "+lr=1e-4"  # 1e-4
+        # name += "+Loss0.1avg"
+        # name += "_FtNoEmb"  # Do not fine-tune the embedding layer
+        # name += "_reg+"  # apply regularization to task-specific heads too
+        # name += "_tanh" if train_test_dict['params']['model_params']['nn_params']['fff'] else ""
+        # name += "_W15"  # window 15, + optimized version
+        # name += "_"
+        # name += "_minmax"
+        name += "_b1000"  # sinusoidal embedding with base=100
+        # name += "_Prenorm"  # include norm before heads
+        name += "_EmbScaleD"
 
         """train_test_dict['params']['model_params']['encoder_cls'] = "ParallelEncoder"
         name += '_P'"""
@@ -567,38 +676,69 @@ def ablation(
         # train_test_dict = ablation_impute_mean(train_test_dict)
 
         print(f"\n{name}: {train_test_dict['params']['model_params']['model_type']}")
-        # seed = model_params['seed']
-        # if seed is not None:
-        #     random.seed(seed)
-        #     np.random.seed(seed)
-        #     tf.random.set_seed(seed)
-        # if seed != 42:
-        #     name += '_seed' + str(train_test_dict['params']['model_params']['seed'])
 
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        checkpoint_dir = checkpoint_basedir + "/" + timestamp
+        os.makedirs(checkpoint_basedir, exist_ok=True)
+        run_id = len(os.listdir(checkpoint_basedir)) + 1
+        # run_id = 35
+        print('Run ID:', run_id)
+        checkpoint_dir = checkpoint_basedir + "/" + f'run{run_id:04d}'
+        # checkpoint_dir = checkpoint_basedir
         os.makedirs(checkpoint_dir, exist_ok=True)
 
-        # if dataset is "french", remove the last exogenous variable in train, validation and test sets
-        '''if path_params['type'] == 'french':
-            """for n in ['train', 'test', 'valid']:
-                train_test_dict[f'exg_{n}'] = train_test_dict[f'exg_{n}'][:-1]"""
-            train_test_dict["params"]["model_params"]["nn_params"]["static_feats_start"] = -1'''
+        # if dataset is "french", treat the last exogenous variable differently
+        if path_params['type'] == 'french':
+            # remove last exogenous variable from exogenous inputs
+            # for n in ['train', 'test', 'valid']:
+            #     train_test_dict[f'exg_{n}'] = train_test_dict[f'exg_{n}'][:-1]
+
+            # specify its index as static features
+            train_test_dict["params"]["model_params"]["nn_params"]["static_feats_ids"] = [3]
+
+            """# extract static features
+            for split in ['train', 'test', 'valid']:
+                exg = train_test_dict[f'exg_{split}']  # (v, b, t, f)
+                static_ids = [2]
+                static = [exg[s][:, 0, 0] for s in static_ids]  # (num_static, B)
+                exg = [exg[s] for s in range(len(exg)) if s not in static_ids]
+                train_test_dict[f'exg_{split}'] = exg
+                static = np.stack(static, axis=1)  # (B, num_static)
+                exg_static = static[:, np.newaxis, :]  # (B, 1, num_static)
+                spt_static = None  # fixme
+                train_test_dict[f'spt_static_{split}'] = spt_static
+                train_test_dict[f'exg_static_{split}'] = exg_static"""
+
+            ...
 
         with open(checkpoint_dir + "/model_params.json", "w") as f:
             _model_params = deepcopy(train_test_dict['params']['model_params'])
             _model_params["name"] = name
             json.dump(_model_params, f, indent=4)
 
-        res = model_step(train_test_dict, train_test_dict['params']['model_params'], checkpoint_dir)
+        met, cur = model_step(train_test_dict, train_test_dict['params']['model_params'], checkpoint_dir)
 
         # non-grid results
         if os.path.exists(results_file):
-            results = pd.read_csv(results_file, index_col=0).T.to_dict()
+            results = pd.read_csv(results_file, index_col=0).to_dict(orient='index')
         else:
             results = {}
-        results[name] = res
-        pd.DataFrame(results).T.to_csv(results_file, index=True)
+        met["run_id"] = run_id
+        results[name] = met
+        # pd.DataFrame(results).T.to_csv(results_file, index=True)
+        columns = (
+            "run_id,test_r2,test_mae,test_mse,test_wMAPE,valid_r2,val_mae,val_mse,val_wMAPE,"
+            "pretr_test_mae,pretr_test_mse,pretr_test_wMAPE,"
+        ).split(',')
+        columns = [c for c in columns if c in met]
+        pd.DataFrame.from_dict(results, orient='index')[columns].to_csv(results_file, index=True)
+
+        curves_path = results_file.replace('.csv', '')
+        os.makedirs(curves_path, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        curves_path = curves_path + "/" + "curves_" + timestamp + ".pickle"
+        cur["name"] = name
+        cur["params"] = train_test_dict["params"]["model_params"]
+        with open(curves_path, 'wb') as f:
+            pickle.dump(cur, f)
 
         """# grid results
         import json
@@ -622,29 +762,42 @@ def main():
     data_seed = prep_params['data_seed']
 
     results_dir = './output/results'
-    pickle_dir = './output/pickle' + ('_seed' + str(data_seed) if data_seed != 42 else '')
-    model_dir = './output/model' + ('_seed' + str(seed) if seed != 42 else '')
+    pickle_dir = './output/pickle'
+    model_dir = './output/model'
 
     os.makedirs(results_dir, exist_ok=True)
     os.makedirs(pickle_dir, exist_ok=True)
     os.makedirs(model_dir, exist_ok=True)
 
-    subset = path_params['ex_filename']
-    if path_params['type'] == 'adbpo' and 'exg_w_tp_t2m' in subset:
-        subset = os.path.basename(subset).replace('exg_w_tp_t2m', 'all').replace('.pickle', '')
-    elif 'all' in subset:
-        path_params['ex_filename'] = None
-    else:
-        subset = os.path.basename(subset).replace('subset_agg_', '').replace('.csv', '')
+    # subset = path_params['ex_filename']
+    # if path_params['type'] == 'adbpo' and 'exg_w_tp_t2m' in subset:
+    #     subset = os.path.basename(subset).replace('exg_w_tp_t2m', 'all').replace('.pickle', '')
+    # elif 'all' in subset:
+    #     path_params['ex_filename'] = None
+    # else:
+    #     subset = os.path.basename(subset).replace('subset_agg_', '').replace('.csv', '')
+    path_params['ex_filename'] = None
     nan_percentage = path_params['nan_percentage']
     num_past = prep_params['ts_params']['num_past']
     num_fut = prep_params['ts_params']['num_fut']
+    num_spt = prep_params['spt_params']['num_spt']
+    max_dist_th = prep_params['spt_params']['max_dist_th']
 
-    conf_name = f"{path_params['type']}_{subset}_nan{int(nan_percentage * 10)}_np{num_past}_nf{num_fut}"
-    conf_name += "_iqr"
+    # conf_name = f"{path_params['type']}_{subset}_nan{int(nan_percentage * 10)}_np{num_past}_nf{num_fut}"
+    # conf_name += "_iqr"
+    conf_name = get_conf_name(
+        dataset=path_params['type'],
+        nan_percentage=nan_percentage,
+        num_past=num_past,
+        num_fut=num_fut,
+        num_spt=num_spt,
+        max_dist_th=max_dist_th,
+        seed=data_seed,
+        dev=path_params['dev']
+    )
     print('configuration:', conf_name)
-    # results_file = os.path.join(results_dir, f"{conf_name}.csv")
-    results_file = os.path.join(results_dir, f"{conf_name}_mse.csv")
+    results_file = os.path.join(results_dir, f"{conf_name}.csv")
+    # results_file = os.path.join(results_dir, f"{conf_name}_mse.csv")
     pickle_file = os.path.join(pickle_dir, f"{conf_name}.pickle")
     checkpoint_dir = os.path.join(model_dir, conf_name)
 
@@ -654,6 +807,13 @@ def main():
         train_test_dict = data_step(
             path_params, prep_params, eval_params, scaler_type=model_params['transform_type']
         )
+        train_test_dict, train_test_dict_aux = train_test_dict
+        pickle_aux_path = pickle_file.replace('.pickle', '_aux.pickle')
+        with open(pickle_aux_path, "wb") as f:
+            print('Saving to', pickle_aux_path, '...', end='', flush=True)
+            pickle.dump(train_test_dict_aux, f)
+            print(' done!')
+        del train_test_dict_aux
         with open(pickle_file, "wb") as f:
             print('Saving to', pickle_file, '...', end='', flush=True)
             pickle.dump(train_test_dict, f)
@@ -669,6 +829,8 @@ def main():
         eval_params=eval_params,
         model_params=model_params,
     )
+
+    # os.remove(pickle_file)  # remove pickle file to save space
 
     print('Hello World!')
 

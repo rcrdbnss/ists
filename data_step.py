@@ -38,6 +38,8 @@ def parse_params():
     parser.add_argument("--gru", type=int, default=None)
     parser.add_argument("--fff", type=int, nargs="+", default=None)
     parser.add_argument("--num-layers", type=int, default=None)
+    parser.add_argument("-sw", "--shared-weights", action='store_true', help="Use shared weights")
+    parser.add_argument("-pt", "--pretrain", action='store_true', help="Run pretraining task")
 
     parser.add_argument("--lr", type=float, default=None, help="Learning rate")
     # parser.add_argument("--warmup-steps", type=int, default=None, help="Warmup steps for custom scheduler")
@@ -82,6 +84,8 @@ def parse_params():
         conf['model_params']['nn_params']['fff'] = fff
     if args.num_layers is not None:
         conf['model_params']['nn_params']['num_layers'] = args.num_layers
+    conf['model_params']['nn_params']['shared_weights'] = args.shared_weights
+    conf['model_params']['pretrain'] = args.pretrain
 
     if args.lr is not None:
         conf['model_params']['lr'] = args.lr
@@ -108,7 +112,7 @@ def parse_params():
         if conf['path_params']['ctx_filename']:
             ctx_name, ctx_ext = os.path.splitext(conf['path_params']['ctx_filename'])
             conf['path_params']['ctx_filename'] = f"{ctx_name}_dev{ctx_ext}"
-        conf['model_params']['epochs'] = 3
+        conf['model_params']['epochs'] = 3  # 1
         conf['model_params']['patience'] = 1
 
     conf['model_params']['cpu'] = args.cpu
@@ -205,6 +209,23 @@ def apply_scaler(ts_dict, features, train_end_excl, scaler_init):
     return ts_dict, scalers
 
 
+def _sample_aux_nulls(is_null, rate):
+    num_nulls_to_add = max(1, round(len(is_null) * rate))
+
+    real_indices = np.where(is_null == 0)[0]
+    # remove 0 (first element) from real_indices to avoid masking the first value
+    real_indices = real_indices[real_indices != 0]
+    if len(real_indices) < num_nulls_to_add:
+        # Not enough real values to mask the required number
+        selected = real_indices  # Mask all that are available
+    else:
+        selected = np.random.choice(real_indices, size=num_nulls_to_add, replace=False)
+
+    aux_is_null = np.zeros_like(is_null)
+    aux_is_null[selected] = 1
+    return aux_is_null
+
+
 def data_step(path_params: dict, prep_params: dict, eval_params: dict, scaler_type=None):
     ts_params = prep_params["ts_params"]
     feat_params = prep_params["feat_params"]
@@ -285,6 +306,17 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, scaler_ty
 
     num_spt = spt_params["num_spt"]
 
+    for stn in list(ts_dict.keys()):
+        for col in cols:
+            # aux_is_null = _sample_aux_nulls(ts_dict[stn][f"{col}_is_null"], rate=0.1)
+            # aux = ts_dict[stn][col].copy()
+            # aux[aux_is_null == 1] = np.nan
+            # aux = aux.ffill()
+            aux_is_null = np.zeros_like(ts_dict[stn][col])
+            aux = ts_dict[stn][col].copy()
+            ts_dict[stn][f"{col}_aux"] = aux
+            ts_dict[stn][f"{col}_aux_is_null"] = aux_is_null
+
     link_spatial_data_fn = {
         "french": link_spatial_data_water_body,
         "ushcn": link_spatial_data,
@@ -308,7 +340,30 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, scaler_ty
         for col in cols:
             ts[f"{col}_null_dist"] = null_distance_array(ts[f"{col}_is_null"])
         ts = ts.dropna(subset=cols)  # drop values that could not be forward filled
+        if len(ts) == 0:
+            ts_dict.pop(stn)
+            continue
+        for col in cols:
+            aux_is_null = _sample_aux_nulls(ts[f"{col}_is_null"], rate=0.1)
+            aux = ts[f"{col}_aux"].copy()
+            aux[aux_is_null == 1] = np.nan
+            aux = aux.ffill()
+            ts.loc[:, f"{col}_aux"] = aux
+            ts.loc[:, f"{col}_aux_is_null"] = aux_is_null
         ts_dict[stn] = ts
+
+    # split ts_dict and ts_dict_aux
+    ts_dict_aux = dict()
+    for stn, ts in ts_dict.items():
+        aux_cols_selector = np.array(['_aux' in col for col in ts.columns])
+        null_dist_selector = np.array(['_null_dist' in col for col in ts.columns])
+        time_cols_selector = np.array([col in feat_params['time_feats'] for col in ts.columns])
+        aux_cols_selector = aux_cols_selector | null_dist_selector | time_cols_selector
+        ts_aux = ts.loc[:, aux_cols_selector].copy()
+        ts_aux = ts_aux.rename(columns=lambda x: x.replace('_aux', ''))
+        ts = ts.loc[:, ~aux_cols_selector | null_dist_selector | time_cols_selector].copy()
+        ts_dict[stn] = ts
+        ts_dict_aux[stn] = ts_aux
 
     x_array, exg_array, spt_array, y_array, time_array, id_array = extract_windows(
         ts_dict=ts_dict,
@@ -351,7 +406,48 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, scaler_ty
         tot += x[:, :, 1].size
     print(f"Null values in windows: {nan}/{tot} ({nan/tot:.2%})")
 
+    # Auxiliary data
+    # To "trick" extract_windows()...
+    for stn in ts_dict_aux:
+        ts_dict_aux[stn][f"{label_col}_orig"] = ts_dict[stn][label_col].copy()
+        ts_dict_aux[stn][f"{label_col}_orig_is_null"] = ts_dict[stn][f"{label_col}_is_null"].copy()
+        ts_dict_aux[stn][f"{label_col}_orig_null_dist"] = ts_dict[stn][f"{label_col}_null_dist"].copy()
+
+    _, exg_array, spt_array, y_array, time_array, id_array = extract_windows(
+        ts_dict_aux,
+        label_col=f"{label_col}_orig",
+        exg_cols=[label_col] + exg_cols,
+        num_spt=spt_params["num_spt"],
+        time_feats=feat_params["time_feats"],
+        num_past=ts_params["num_past"],
+        num_fut=ts_params["num_fut"],
+        max_null_th=eval_params["null_th"]
+    )
+    x_array = exg_array[0]
+    exg_array = exg_array[1:]
+
+    res_aux = prepare_train_test(
+        x_array=x_array,
+        y_array=y_array,
+        time_array=time_array,
+        id_array=id_array,
+        spt_array=spt_array,
+        exg_array=exg_array,
+        test_start=eval_params['test_start'],
+        valid_start=eval_params['valid_start'],
+        spt_dict=spt_dict
+    )
+
+    res = (res, res_aux)
+
     return res
+
+
+def get_conf_name(dataset, nan_percentage, num_past, num_fut, num_spt, max_dist_th, seed, dev):
+    subset = f"spt{num_spt}"
+    if num_spt > 0: subset += f"_th{max_dist_th}"
+    if dev: subset += "_dev"
+    return f"{dataset}_{subset}_nan{int(nan_percentage * 10)}_np{num_past}_nf{num_fut}_s{seed}"
 
 
 if __name__ == '__main__':
@@ -360,30 +456,49 @@ if __name__ == '__main__':
     random.seed(seed)
     np.random.seed(seed)
 
-    data_dir = './output/pickle' + ('_seed' + str(seed) if seed != 42 else '')
+    data_dir = './output/pickle'
 
     os.makedirs(data_dir, exist_ok=True)
 
-    subset = path_params['ex_filename']
-    if path_params['type'] == 'adbpo' and 'exg_w_tp_t2m' in subset:
-        subset = os.path.basename(subset).replace('exg_w_tp_t2m', 'all').replace('.pickle', '')
-    elif 'all' in subset:
-        path_params['ex_filename'] = None
-    else:
-        subset = os.path.basename(subset).replace('subset_agg_', '').replace('.csv', '')
+    # subset = path_params['ex_filename']
+    # if path_params['type'] == 'adbpo' and 'exg_w_tp_t2m' in subset:
+    #     subset = os.path.basename(subset).replace('exg_w_tp_t2m', 'all').replace('.pickle', '')
+    # elif 'all' in subset:
+    #     path_params['ex_filename'] = None
+    # else:
+    #     subset = os.path.basename(subset).replace('subset_agg_', '').replace('.csv', '')
+    path_params['ex_filename'] = None
     nan_percentage = path_params['nan_percentage']
     num_past = prep_params['ts_params']['num_past']
     num_fut = prep_params['ts_params']['num_fut']
     num_spt = prep_params['spt_params']['num_spt']
+    max_dist_th = prep_params['spt_params']['max_dist_th']
 
-    out_name = f"{path_params['type']}_{subset}_nan{int(nan_percentage * 10)}_np{num_past}_nf{num_fut}"
-    out_name += "_iqr"
+    # out_name = f"{path_params['type']}_{subset}_nan{int(nan_percentage * 10)}_np{num_past}_nf{num_fut}_s{seed}"
+    # out_name += "_iqr"
+    out_name = get_conf_name(
+        dataset=path_params['type'],
+        nan_percentage=nan_percentage,
+        num_past=num_past,
+        num_fut=num_fut,
+        num_spt=num_spt,
+        max_dist_th=max_dist_th,
+        seed=seed,
+        dev=path_params['dev']
+    )
     print('out_name:', out_name)
-    pickle_path = os.path.join(data_dir, f"{out_name}.pickle")
+    pickle_path = os.path.join(data_dir, out_name+".pickle")
 
     train_test_dict = data_step(
         path_params, prep_params, eval_params, scaler_type=model_params['transform_type']
     )
+
+    train_test_dict, train_test_dict_aux = train_test_dict
+    pickle_aux_path = pickle_path.replace('.pickle', '_aux.pickle')
+    with open(pickle_aux_path, "wb") as f:
+        print('Saving to', pickle_aux_path, '...', end='', flush=True)
+        pickle.dump(train_test_dict_aux, f)
+        print(' done!')
 
     with open(pickle_path, "wb") as f:
         print('Saving to', pickle_path, '...', end='', flush=True)

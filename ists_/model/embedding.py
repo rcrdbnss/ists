@@ -5,16 +5,17 @@ from ists_.preprocessing import TIME_N_VALUES
 
 
 class PositionalEmbedding(tf.keras.layers.Layer):
-    def __init__(self, d_model, max_len=5000):
+    def __init__(self, d_model, max_len=5000, base=10000.0):
         super(PositionalEmbedding, self).__init__()
+
         # Compute the positional encodings once in log space.
-        pe = np.zeros((max_len, d_model), dtype=np.float32)
-
         position = np.expand_dims(np.arange(0, max_len), 1)
-        div_term = np.exp(np.arange(0, d_model, 2) * -(np.log(10000.0) / d_model))
+        div_term = np.exp(np.arange(0, d_model, 2) * -(np.log(base) / d_model))
 
-        pe[:, 0::2] = np.sin(position * div_term)
-        pe[:, 1::2] = np.cos(position * div_term)
+        # pe = np.zeros((max_len, d_model), dtype=np.float32)
+        # pe[:, 0::2] = np.sin(position * div_term)
+        # pe[:, 1::2] = np.cos(position * div_term)
+        pe = np.concatenate([np.sin(position * div_term), np.cos(position * div_term)], axis=1)
 
         pe = np.expand_dims(pe, 0)
         self.pe = tf.constant(pe, dtype=tf.float32)
@@ -24,17 +25,17 @@ class PositionalEmbedding(tf.keras.layers.Layer):
 
 
 class FixedEmbedding(tf.keras.layers.Layer):
-    def __init__(self, c_in, d_model):
+    def __init__(self, c_in, d_model, base=10000.0):
         super(FixedEmbedding, self).__init__()
 
         # Create the embedding matrix
-        w = np.zeros((c_in, d_model), dtype=np.float32)
-
         position = np.expand_dims(np.arange(0, c_in), 1)
-        div_term = np.exp(np.arange(0, d_model, 2) * -(np.log(10000.0) / d_model))
+        div_term = np.exp(np.arange(0, d_model, 2) * -(np.log(base) / d_model))
 
-        w[:, 0::2] = np.sin(position * div_term)
-        w[:, 1::2] = np.cos(position * div_term)
+        # w = np.zeros((c_in, d_model), dtype=np.float32)
+        # w[:, 0::2] = np.sin(position * div_term)
+        # w[:, 1::2] = np.cos(position * div_term)
+        w = np.concatenate([np.sin(position * div_term), np.cos(position * div_term)], axis=1)
 
         # Initialize the embedding layer with the precomputed weights
         self.emb = tf.keras.layers.Embedding(c_in, d_model, embeddings_initializer=tf.constant_initializer(w),
@@ -42,110 +43,6 @@ class FixedEmbedding(tf.keras.layers.Layer):
 
     def call(self, x):
         return self.emb(x)
-
-
-"""class FixedEmbedding(tf.keras.layers.Layer):
-    def __init__(self, c_in, d_model):
-        super().__init__()
-
-        # Create the embedding matrix
-        w = np.zeros((c_in, d_model), dtype=np.float32)
-
-        # 1. Calculate the base angle for each position in the cycle
-        position = np.expand_dims(np.arange(0, c_in), 1)
-        angles = 2 * np.pi * position / c_in
-
-        # 2. Define the integer frequencies for the Fourier features
-        freqs = np.expand_dims(np.arange(1, d_model // 2 + 1), 0)
-        # freqs = np.ones((1, d_model // 2))
-
-        # 3. Calculate the sine and cosine values using broadcasting
-        w[:, 0::2] = np.sin(angles * freqs)
-        w[:, 1::2] = np.cos(angles * freqs)
-
-        # Initialize the embedding layer with the precomputed weights
-        self.emb = tf.keras.layers.Embedding(
-            c_in, d_model, embeddings_initializer=tf.constant_initializer(w),
-            trainable=True,
-            # trainable=False,
-        )
-
-    def call(self, x):
-        return self.emb(x)"""
-
-
-"""class CyclicalEmbedding(tf.keras.layers.Layer):
-    def __init__(self, c_in, d_model):
-        super(CyclicalEmbedding, self).__init__()
-        self.c_in = c_in
-        self.proj = tf.keras.layers.Dense(d_model, use_bias=False)
-
-    def call(self, x):
-        theta = 2 * np.pi * x / self.c_in  # (B, T)
-        theta = tf.expand_dims(theta, axis=-1)  # (B, T, 1)
-        sin_emb = tf.sin(theta)
-        cos_emb = tf.cos(theta)
-        emb = tf.concat([sin_emb, cos_emb], axis=-1)  # (B, T, 2)
-        emb = self.proj(emb)  # (B, T, d_model)
-        return emb"""
-
-
-class CyclicalEmbedding(tf.keras.layers.Layer):
-    def __init__(self, c_in, d_model):
-        super(CyclicalEmbedding, self).__init__()
-
-        # 1. Start with the 2D representation
-        position = np.expand_dims(np.arange(0, c_in), 1)  # (C, 1)
-        angles = 2 * np.pi * position / c_in
-        embeddings_2d = np.c_[np.sin(angles), np.cos(angles)]  # (C, 2)
-
-        """# 2. Pad with zeros to reach d_model dimensions
-        num_samples = len(position)
-        embeddings = np.zeros((num_samples, d_model))  # (C, d_model)
-        embeddings[:, :2] = embeddings_2d"""
-        """# 2. Repeat the 2D embeddings to fill d_model dimensions
-        repeat_factor = d_model // 2
-        embeddings = np.tile(embeddings_2d, (1, repeat_factor))  # (C, d_model)"""
-
-        """# 3. Create a random orthogonal matrix Q using QR decomposition
-        random_matrix = np.random.randn(d_model, d_model)
-        q, _ = np.linalg.qr(random_matrix)
-
-        # 4. Multiply the padded vectors by Q
-        embeddings = embeddings @ q"""
-
-        # 2. Project to d_model dimensions
-        random_matrix = np.random.normal(loc=0.0, scale=1.0, size=(2, d_model))
-        embeddings = np.dot(embeddings_2d, random_matrix)  # (C, d_model)
-
-        # 3. Normalize to unit hypersphere
-        norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
-        embeddings = embeddings / norms
-
-        self.emb = tf.keras.layers.Embedding(
-            c_in, d_model, embeddings_initializer=tf.constant_initializer(embeddings),
-            # trainable=True,
-            trainable=False,
-        )
-
-        # self.scale = 1.0
-        self.scale = self.add_weight(
-            name='scale',
-            shape=(),
-            initializer='ones',
-            trainable=True,
-        )
-
-        # self.bias = 0.0
-        self.bias = self.add_weight(
-            name='bias',
-            shape=(),
-            initializer='zeros',
-            trainable=True
-        )
-
-    def call(self, x):
-        return self.emb(x) * self.scale + self.bias
 
 
 class TemporalEmbedding(tf.keras.layers.Layer):
@@ -162,7 +59,7 @@ class TemporalEmbedding(tf.keras.layers.Layer):
             kernel_regularizer=l2_reg
         )
 
-        self.pos_embedder = PositionalEmbedding(self.d_model)
+        self.pos_embedder = PositionalEmbedding(self.d_model, base=1000)
 
         # Feature mask to split values for time encodings and null encoding
         self.feature_mask = np.array(feature_mask)
@@ -174,8 +71,7 @@ class TemporalEmbedding(tf.keras.layers.Layer):
         # Time embedding layers
         self.time_embedders = []
         if time_features:
-            self.time_embedders = [FixedEmbedding(d_model=d_model, c_in=TIME_N_VALUES[f]) for f in time_features]
-            # self.time_embedders = [CyclicalEmbedding(d_model=d_model, c_in=TIME_N_VALUES[f]) for f in time_features]
+            self.time_embedders = [FixedEmbedding(d_model=d_model, c_in=TIME_N_VALUES[f], base=1000) for f in time_features]
         self.time_feats_scale = 1.0  # fixed scale
         """# learnable scale factor
         self.time_feats_scale = self.add_weight(
@@ -209,6 +105,7 @@ class TemporalEmbedding(tf.keras.layers.Layer):
 
         # This factor sets the relative scale of the embedding and positional_encoding.
         emb *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
+        emb *= tf.math.sqrt(tf.cast(2 + 1 + 1, tf.float32))  # fixme: time features + position + variable
 
         emb = emb + self.pos_embedder(x)
 
@@ -227,37 +124,35 @@ class TemporalEmbedding(tf.keras.layers.Layer):
         return emb
 
 
-def create_fixed_variable_embeddings(num_variables: int, embedding_dim: int):
-    basis_vectors = tf.eye(num_variables)
+def variable_embeddings_regular_simplex(num_variables: int, embedding_dim: int):
+    basis_vectors = np.eye(num_variables)
 
-    centroid = tf.reduce_mean(basis_vectors, axis=0, keepdims=True)
+    centroid = np.mean(basis_vectors, axis=0, keepdims=True)
     centered_vectors = basis_vectors - centroid
 
-    scaling_factor = tf.sqrt(float(num_variables) / float(num_variables - 1))
+    scaling_factor = np.sqrt(float(num_variables) / float(num_variables - 1))  # * np.sqrt(embedding_dim / 2)
     scaled_vectors = centered_vectors * scaling_factor
 
-    padding_dims = embedding_dim - num_variables
-    if padding_dims < 0:
-        padding_dims = 0
+    padding_dims = max(0, embedding_dim - num_variables)
 
-    paddings = tf.constant([[0, 0], [0, padding_dims]])
-    final_embeddings = tf.pad(
-        scaled_vectors, paddings, "CONSTANT", constant_values=0
+    paddings = ((0, 0), (0, padding_dims))
+    final_embeddings = np.pad(
+        scaled_vectors, paddings, "constant", constant_values=0
     )
 
     return final_embeddings
 
 
-def create_fixed_dense_variable_embeddings(num_variables: int, embedding_dim: int):
-    padded_embeddings = create_fixed_variable_embeddings(num_variables, embedding_dim)
+def variable_embeddings_regular_simplex_dense(num_variables: int, embedding_dim: int):
+    padded_embeddings = variable_embeddings_regular_simplex(num_variables, embedding_dim)
 
     # Create a random square matrix of shape (E, E)
-    random_matrix = tf.random.normal(shape=(embedding_dim, embedding_dim))
+    random_matrix = np.random.randn(embedding_dim, embedding_dim)
 
     # Use QR decomposition to get an orthogonal matrix Q
-    q_matrix, _ = tf.linalg.qr(random_matrix)
+    q_matrix, _ = np.linalg.qr(random_matrix)
 
     # Apply the rotation to the padded embeddings
-    dense_embeddings = tf.matmul(padded_embeddings, q_matrix)
+    dense_embeddings = np.dot(padded_embeddings, q_matrix)
 
     return dense_embeddings

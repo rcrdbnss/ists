@@ -101,7 +101,7 @@ class STTransformerSequentialAttnMask(tf.keras.Model):
             self.final_layers = PredictorGRU(
                 gru_units=self.gru, fff=self.fff, activation=self.activation, dropout_rate=self.dropout_rate, l2_reg=self.l2_reg
             )
-
+        self.vemb_x, self.vembs_exg, self.vembs_spt = None, None, None
 
     def get_config(self):
         config = super().get_config().copy()
@@ -132,6 +132,20 @@ class STTransformerSequentialAttnMask(tf.keras.Model):
             return x, None
         return tf.gather(x, self.value_ids, axis=-1), x[:, :, self.attn_mask_id]
 
+    def build(self, input_shape):
+        (B, Ve, T, F), (_, Vs, _, _) = input_shape
+        V = max(Ve, Vs)
+        pe = np.zeros((V, self.d_model), dtype=np.float32)
+        position = np.expand_dims(np.arange(0, V), 1)
+        div_term = np.exp(np.arange(0, self.d_model, 2) * -(np.log(10000.0) / self.d_model))
+        pe[:, 0::2] = np.sin(position * div_term)
+        pe[:, 1::2] = np.cos(position * div_term)
+        variable_embeddings = pe[:, tf.newaxis, tf.newaxis, :]  # (1, V, 1, d_model)
+        self.vemb_x = variable_embeddings[:1, :, :, :]  # (1, 1, 1, d_model)
+        self.vembs_exg = variable_embeddings[1:Ve, :, :, :]  # (1, Ve, 1, d_model)
+        self.vembs_spt = variable_embeddings[1:Vs, :, :, :]  # (1, Vs, 1, d_model)
+        super().build(input_shape)
+
     def call(self, inputs):
         exg_x, spt_x = inputs[0], inputs[1]
         exg_x = tf.transpose(exg_x, (1, 0, 2, 3))
@@ -156,9 +170,14 @@ class STTransformerSequentialAttnMask(tf.keras.Model):
         x = self.embedder(x)
         exg_x = [self.embedder(e) for e in exg_x]
         spt_x = [self.embedder(s) for s in spt_x]
-        x, exg_x, spt_x = self.dropout(x), [self.dropout(e) for e in exg_x], [self.dropout(s) for s in spt_x]
+        # x, exg_x, spt_x = self.dropout(x), [self.dropout(e) for e in exg_x], [self.dropout(s) for s in spt_x]
+        x = tf.expand_dims(x, axis=0) + self.vemb_x
+        exg_x = tf.stack(exg_x, axis=0) + self.vembs_exg
+        spt_x = (tf.stack(spt_x, axis=0) + self.vembs_spt) if len(spt_x) > 0 else tf.zeros_like(exg_x)[0:0]
+        x, exg_x, spt_x = self.dropout(x), self.dropout(exg_x), self.dropout(spt_x)
 
         x, exg_x, spt_x = self.encoder(x=x, exg_ctx=exg_x, spt_ctx=spt_x, x_attn_mask=x_attn_mask, exg_ctx_attn_mask=exg_attn_mask, spt_ctx_attn_mask=spt_attn_mask)
+        x = tf.squeeze(x, axis=0)
 
         pred = self.final_layers(x)  # CUDNN does not support masking
 
@@ -167,7 +186,7 @@ class STTransformerSequentialAttnMask(tf.keras.Model):
 
 class SequentialEncoderAttnMask(tf.keras.layers.Layer):
 
-    def __switched_off(self, x, attn_mask=None):
+    def __switched_off(self, x, attention_mask=None):
         return x
 
     def __init__(self, *, d_model, num_heads, dff, activation='relu', num_layers=1, dropout_rate=0.1, l2_reg=None,
@@ -197,14 +216,8 @@ class SequentialEncoderAttnMask(tf.keras.layers.Layer):
                 d_model=d_model, num_heads=num_heads, dff=dff, activation=activation, dropout_rate=dropout_rate, l2_reg=l2_reg
             ) for _ in range(num_layers)] if do_spt else [self.__switched_off for _ in range(self.num_layers)]
 
-        """self.T = False
-        self.spt_encs = [self.__switched_off] * num_layers
-        self.exg_encs = [layer_cls(
-            d_model=d_model, num_heads=num_heads, dff=dff, activation=activation, dropout_rate=dropout_rate, l2_reg=l2_reg
-        )] * num_layers"""
-
     def call(self, x, exg_ctx, spt_ctx, x_attn_mask=None, exg_ctx_attn_mask=None, spt_ctx_attn_mask=None):
-        x = tf.expand_dims(x, axis=0)
+        # x = tf.expand_dims(x, axis=0)
         if x_attn_mask is not None:
             x_attn_mask = tf.expand_dims(x_attn_mask, axis=0)
         if self.T:
@@ -224,12 +237,12 @@ class SequentialEncoderAttnMask(tf.keras.layers.Layer):
                 spt_attn_mask = tf.concat([x_attn_mask, spt_ctx_attn_mask], axis=0)
             for i in range(self.num_layers):
                 exg_x = tf.concat([x, exg_ctx], axis=0)
-                exg_x = self.exg_encs[i](exg_x, attn_mask=exg_attn_mask)
+                exg_x = self.exg_encs[i](exg_x, attention_mask=exg_attn_mask)
                 x, exg_ctx = tf.split(exg_x, [1, tf.shape(exg_ctx)[0]], axis=0)
                 spt_x = tf.concat([x, spt_ctx], axis=0)
-                spt_x = self.spt_encs[i](spt_x, attn_mask=spt_attn_mask)
+                spt_x = self.spt_encs[i](spt_x, attention_mask=spt_attn_mask)
                 x, spt_ctx = tf.split(spt_x, [1, tf.shape(spt_ctx)[0]], axis=0)
-            x = tf.squeeze(x, axis=0)
+            # x = tf.squeeze(x, axis=0)
         # x = x[0]
         if not self.do_exg:
             exg_ctx = tf.zeros_like(exg_ctx)[0:0]
@@ -308,7 +321,7 @@ class ParallelEncoder(tf.keras.layers.Layer):
 
 class EncoderLocalGlobalAttnMaskLayer(tf.keras.layers.Layer):
 
-    def __init__(self, *, d_model, num_heads, dff, activation='relu', dropout_rate=0.1, l2_reg=None, shared_weights=False):
+    def __init__(self, *, d_model, num_heads, dff, activation='relu', dropout_rate=0.1, l2_reg=None):
         super().__init__()
 
         reg = {}
@@ -317,20 +330,19 @@ class EncoderLocalGlobalAttnMaskLayer(tf.keras.layers.Layer):
 
         self.loc_attn = GlobalSelfAttention(
             num_heads=num_heads,
-            key_dim=d_model,
+            # key_dim=d_model,
+            key_dim=d_model // num_heads,
             dropout=dropout_rate,
             **reg
         )
 
-        if shared_weights:
-            self.glb_attn = self.loc_attn
-        else:
-            self.glb_attn = GlobalSelfAttention(
-                num_heads=num_heads,
-                key_dim=d_model,
-                dropout=dropout_rate,
-                **reg
-            )
+        self.glb_attn = GlobalSelfAttention(
+            num_heads=num_heads,
+            # key_dim=d_model,
+            key_dim=d_model // num_heads,
+            dropout=dropout_rate,
+            **reg
+        )
 
         self.ffn = FeedForward(
             d_model=d_model,
@@ -339,8 +351,9 @@ class EncoderLocalGlobalAttnMaskLayer(tf.keras.layers.Layer):
             dropout_rate=dropout_rate, **reg
         )
 
-    def call(self, x, attn_mask=None):  # x: (v, b, t, e) attn_mask: (v, b, t)
+    def call(self, x, attention_mask=None):  # x: (v, b, t, e) attn_mask: (v, b, t)
         x = tf.transpose(x, perm=[1, 0, 2, 3])  # x: (b, v, t, e)
+        attn_mask = attention_mask
         attn_mask = tf.transpose(attn_mask, perm=[1, 0, 2])  # attn_mask: (b, v, t)
 
         shape = tf.shape(x)

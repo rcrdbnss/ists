@@ -70,8 +70,10 @@ def link_spatial_data_water_body(
         stn_neighbors = dists[:num_spt].index.values
 
         for s, stn_2 in enumerate(stn_neighbors):
-            ts_2 = ts_dict[stn_2][[label_col, f"{label_col}_is_null"]]
-            ts_2.columns = [f"spt{s}", f"spt{s}_is_null"]
+            """ts_2 = ts_dict[stn_2][[label_col, f"{label_col}_is_null"]]
+            ts_2.columns = [f"spt{s}", f"spt{s}_is_null"]"""
+            ts_2 = ts_dict[stn_2][[label_col, f"{label_col}_is_null", f"{label_col}_aux", f"{label_col}_aux_is_null"]]
+            ts_2.columns = [f"spt{s}", f"spt{s}_is_null", f"spt{s}_aux", f"spt{s}_aux_is_null"]
             ts_1 = ts_1.join(ts_2, how='outer')
         ts_dict_[stn_1] = ts_1
 
@@ -113,8 +115,10 @@ def link_spatial_data(
 
         # ts_1 = ts_dict[stn_1]
         for s, stn_2 in enumerate(stn_neighbors):
-            ts_2 = ts_dict[stn_2][[label_col, f"{label_col}_is_null"]]
-            ts_2.columns = [f"spt{s}", f"spt{s}_is_null"]
+            """ts_2 = ts_dict[stn_2][[label_col, f"{label_col}_is_null"]]
+            ts_2.columns = [f"spt{s}", f"spt{s}_is_null"]"""
+            ts_2 = ts_dict[stn_2][[label_col, f"{label_col}_is_null", f"{label_col}_aux", f"{label_col}_aux_is_null"]]
+            ts_2.columns = [f"spt{s}", f"spt{s}_is_null", f"spt{s}_aux", f"spt{s}_aux_is_null"]
             ts_1 = ts_1.join(ts_2, how='outer')
         ts_dict_[stn_1] = ts_1
 
