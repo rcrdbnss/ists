@@ -317,7 +317,7 @@ class ModelWrapper:
 
         pretrained_path = os.path.join(self.checkpoint_dir, 'pretr_encoder.weights.h5')
         self.load_pretrained_checkpoint(pretrained_path)
-        '''self.model.summary(expand_nested=True)
+        '''self.model.summary(expand_nested=True)  # COMMENT FROM HERE FOR NO WARMUP
 
         self.model.compile(loss=self.loss, **optimizer, metrics=['mae', 'mse'], run_eagerly=self.dev)
 
@@ -346,7 +346,7 @@ class ModelWrapper:
         # Load best model
         self.model.load_weights(checkpoint_path)
         self.model.save_weights(self.checkpoint_dir + '/finet1.weights.h5')
-        os.remove(checkpoint_path)'''
+        os.remove(checkpoint_path)  # COMMENT UNTIL HERE FOR NO WARMUP'''
 
         print('\n## Finetuning the encoder ##\n')
 

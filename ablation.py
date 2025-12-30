@@ -599,8 +599,8 @@ def ablation(
         # train_test_dict = sample_aux_mask(train_test_dict, rate=0.1)"""
 
         train_test_dict['params']['model_params']['model_type'] = "istf_attnpool"
-        name += '_AttnPool'
-        # name += '_MeanPool'
+        # name += '_AttnPool'
+        name += '_MeanPool'
         # train_test_dict = sample_aux_mask(train_test_dict, rate=0.1)
 
         with open(pickle_file.replace(".pickle", "_aux.pickle"), "rb") as f:
@@ -678,7 +678,10 @@ def ablation(
         print(f"\n{name}: {train_test_dict['params']['model_params']['model_type']}")
 
         os.makedirs(checkpoint_basedir, exist_ok=True)
-        run_id = len(os.listdir(checkpoint_basedir)) + 1
+        # run_id = len(os.listdir(checkpoint_basedir)) + 1
+        run_id = 1
+        while os.path.exists(checkpoint_basedir + "/" + f'run{run_id:04d}'):
+            run_id += 1
         # run_id = 35
         print('Run ID:', run_id)
         checkpoint_dir = checkpoint_basedir + "/" + f'run{run_id:04d}'
@@ -733,8 +736,8 @@ def ablation(
 
         curves_path = results_file.replace('.csv', '')
         os.makedirs(curves_path, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        curves_path = curves_path + "/" + "curves_" + timestamp + ".pickle"
+        # timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        curves_path = curves_path + "/" + "curves_" + f'run{run_id:04d}' + ".pickle"
         cur["name"] = name
         cur["params"] = train_test_dict["params"]["model_params"]
         with open(curves_path, 'wb') as f:

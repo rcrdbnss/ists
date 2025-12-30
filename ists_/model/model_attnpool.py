@@ -141,16 +141,15 @@ class ISTInterpolationAttnPool(tf.keras.Model):
         self.l2_reg = encoder.l2_reg
 
         self.dropout = tf.keras.layers.Dropout(self.dropout_rate)
-        # self.intp_head = Regressor(1, self.d_model, self.activation, self.dropout_rate, self.l2_reg, name='intp_head')
+        # self.intp_head = Regressor(1, self.dff, self.activation, self.dropout_rate, self.l2_reg, name='intp_head')
         # self.intp_head = tf.keras.layers.Dense(1, activation='linear', name='intp_head', kernel_regularizer=tf.keras.regularizers.l2(self.l2_reg))
         self.intp_head = ChannelWiseLinear(l2_reg=self.l2_reg)
 
         self.mse = tf.keras.metrics.Mean(name='mse')
         self.obs_mse = tf.keras.metrics.Mean(name='mse_obs')
 
-        # self.mean_pool = AttentivePooling()
         self.mean_pool = MeanPooling()
-        # self.mean_head = Regressor(1, self.d_model, self.activation, self.dropout_rate, self.l2_reg, name='mean_head')
+        # self.mean_head = Regressor(1, self.dff, self.activation, self.dropout_rate, self.l2_reg, name='mean_head')
         # self.mean_head = tf.keras.layers.Dense(1, activation='linear', name='mean_head', kernel_regularizer=tf.keras.regularizers.l2(self.l2_reg))
         self.mean_head = ChannelWiseLinear(l2_reg=self.l2_reg)
         # self.mean_task_weight = 1.0  # weight for mean task loss
@@ -236,8 +235,8 @@ class ISTForecastingAttnPool(tf.keras.Model):
         self.l2_reg = encoder.l2_reg
 
         self.dropout = tf.keras.layers.Dropout(self.dropout_rate)
-        self.pred_pool = AttentivePooling()
-        # self.pred_pool = MeanPooling()
+        # self.pred_pool = AttentivePooling()
+        self.pred_pool = MeanPooling()
         # self.pred_head = Regressor(1, self.dff, self.activation, self.dropout_rate, self.l2_reg, name='pred_head')
         self.pred_head = tf.keras.layers.Dense(1, activation='linear', name='pred_head', kernel_regularizer=tf.keras.regularizers.l2(self.l2_reg))
 
@@ -246,7 +245,7 @@ class ISTForecastingAttnPool(tf.keras.Model):
         if self.mean_task_weight > 0:
             # self.mean_pool = AttentivePooling()
             self.mean_pool = MeanPooling()
-            # self.mean_head = Regressor(1, self.d_model, self.activation, self.dropout_rate, self.l2_reg, name='mean_head')
+            # self.mean_head = Regressor(1, self.dff, self.activation, self.dropout_rate, self.l2_reg, name='mean_head')
             # self.mean_head = tf.keras.layers.Dense(1, activation='linear', name='mean_head', kernel_regularizer=tf.keras.regularizers.l2(self.l2_reg))
             self.mean_head = ChannelWiseLinear(l2_reg=self.l2_reg)
             self.aux_loss = tf.keras.metrics.Mean(name='mse_avg')

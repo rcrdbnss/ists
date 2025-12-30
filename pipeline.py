@@ -78,12 +78,14 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
         # model.load_pretrained_checkpoint(model.checkpoint_dir + "/pretr_encoder.weights.h5")
         metrics_pretr, curves_pretr = {}, {}
         curves_pretr.update({
-            'mse_avg_curve': model.history.history['mse_avg'],
-            'mse_curve': model.history.history['mse'],
-            'mse_obs_curve': model.history.history['mse_obs'],
-            'val_mse_avg_curve': model.history.history['val_mse_avg'],
-            'val_mse_curve': model.history.history['val_mse'],
-            'val_mse_obs_curve': model.history.history['val_mse_obs'],
+            'loss': model.history.history['loss'],
+            'mse_avg': model.history.history['mse_avg'],
+            'mse': model.history.history['mse'],
+            'mse_obs': model.history.history['mse_obs'],
+            'val_loss': model.history.history['val_loss'],
+            'val_mse_avg': model.history.history['val_mse_avg'],
+            'val_mse': model.history.history['val_mse'],
+            'val_mse_obs': model.history.history['val_mse_obs'],
         })
 
         if hasattr(model, 'pretrain_predict'):
@@ -173,13 +175,13 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
     metrics.update(res_test)
     print(res_test)
 
-    # res['loss'] = model.history.history['loss']
-    # res['val_loss'] = model.history.history['val_loss']
-    curves['mse_curve'] = model.history.history['mse']
-    curves['val_mse_curve'] = model.history.history['val_mse']
+    curves['loss'] = model.history.history['loss']
+    curves['val_loss'] = model.history.history['val_loss']
+    curves['mse'] = model.history.history['mse']
+    curves['val_mse'] = model.history.history['val_mse']
     curves.update({
-        'mse_avg_curve': model.history.history['mse_avg'] if 'mse_avg' in model.history.history else [],
-        'val_mse_avg_curve': model.history.history['val_mse_avg'] if 'val_mse_avg' in model.history.history else [],
+        'mse_avg': model.history.history['mse_avg'] if 'mse_avg' in model.history.history else [],
+        'val_mse_avg': model.history.history['val_mse_avg'] if 'val_mse_avg' in model.history.history else [],
     })
     epoch_times = model.epoch_times
     if isinstance(epoch_times, dict):
