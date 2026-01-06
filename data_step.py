@@ -40,6 +40,7 @@ def parse_params():
     parser.add_argument("--num-layers", type=int, default=None)
     parser.add_argument("-sw", "--shared-weights", action='store_true', help="Use shared weights")
     parser.add_argument("-pt", "--pretrain", action='store_true', help="Run pretraining task")
+    parser.add_argument("--pooling", choices=['mean', 'attn'], default='attn', help="Pooling type")
 
     parser.add_argument("--lr", type=float, default=None, help="Learning rate")
     # parser.add_argument("--warmup-steps", type=int, default=None, help="Warmup steps for custom scheduler")
@@ -85,6 +86,7 @@ def parse_params():
     if args.num_layers is not None:
         conf['model_params']['nn_params']['num_layers'] = args.num_layers
     conf['model_params']['nn_params']['shared_weights'] = args.shared_weights
+    conf['model_params']['nn_params']['pooling'] = args.pooling
     conf['model_params']['pretrain'] = args.pretrain
 
     if args.lr is not None:

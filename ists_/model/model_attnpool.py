@@ -47,7 +47,8 @@ class ISTEncoder(tf.keras.Model):
             feature_mask=self.feature_mask,
             time_features=self.time_features,
             activation=self.activation,
-            l2_reg=self.l2_reg
+            l2_reg=self.l2_reg,
+            mixed_strategy=True
         )
         self.layernorm = tf.keras.layers.LayerNormalization() #rms_scaling=True)
         self.dropout = tf.keras.layers.Dropout(self.dropout_rate)
@@ -223,7 +224,7 @@ class ISTInterpolationAttnPool(tf.keras.Model):
 
 class ISTForecastingAttnPool(tf.keras.Model):
 
-    def __init__(self, encoder: ISTEncoder):
+    def __init__(self, encoder: ISTEncoder, pooling='attn'):
         super().__init__()
         self.encoder = encoder
         self.raw_feature_id = encoder.raw_feature_id
@@ -233,17 +234,17 @@ class ISTForecastingAttnPool(tf.keras.Model):
         self.activation = encoder.activation
         self.dropout_rate = encoder.dropout_rate
         self.l2_reg = encoder.l2_reg
+        self.pooling = pooling
 
         self.dropout = tf.keras.layers.Dropout(self.dropout_rate)
-        # self.pred_pool = AttentivePooling()
-        self.pred_pool = MeanPooling()
+        self.pred_pool = AttentivePooling() if pooling == 'attn' else MeanPooling()
+        # self.pred_pool = MeanPooling()
         # self.pred_head = Regressor(1, self.dff, self.activation, self.dropout_rate, self.l2_reg, name='pred_head')
         self.pred_head = tf.keras.layers.Dense(1, activation='linear', name='pred_head', kernel_regularizer=tf.keras.regularizers.l2(self.l2_reg))
 
         # self.mean_task_weight = 1.0  # weight for mean task loss
         self.mean_task_weight = 0  # disable mean task
         if self.mean_task_weight > 0:
-            # self.mean_pool = AttentivePooling()
             self.mean_pool = MeanPooling()
             # self.mean_head = Regressor(1, self.dff, self.activation, self.dropout_rate, self.l2_reg, name='mean_head')
             # self.mean_head = tf.keras.layers.Dense(1, activation='linear', name='mean_head', kernel_regularizer=tf.keras.regularizers.l2(self.l2_reg))

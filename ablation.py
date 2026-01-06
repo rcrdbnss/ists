@@ -599,8 +599,8 @@ def ablation(
         # train_test_dict = sample_aux_mask(train_test_dict, rate=0.1)"""
 
         train_test_dict['params']['model_params']['model_type'] = "istf_attnpool"
-        # name += '_AttnPool'
-        name += '_MeanPool'
+        name += '_AttnPool' if train_test_dict['params']['model_params']['nn_params']['pooling'] == 'attn' else '_MeanPool'
+        # name += '_MeanPool'
         # train_test_dict = sample_aux_mask(train_test_dict, rate=0.1)
 
         with open(pickle_file.replace(".pickle", "_aux.pickle"), "rb") as f:
@@ -664,9 +664,10 @@ def ablation(
         # name += "_W15"  # window 15, + optimized version
         # name += "_"
         # name += "_minmax"
-        name += "_b1000"  # sinusoidal embedding with base=100
+        name += "_b100"  # sinusoidal embedding with base=100
         # name += "_Prenorm"  # include norm before heads
-        name += "_EmbScaleD"
+        # name += "_EmbScaleD"
+        name += "_TPEmbD"  # time features and position embedded together
 
         """train_test_dict['params']['model_params']['encoder_cls'] = "ParallelEncoder"
         name += '_P'"""

@@ -304,7 +304,7 @@ class ModelWrapper:
         lr = lr_schedule_warmup_linear(lr, warmup_steps=500)
 
         encoder = self.enc_cls(**self.model_params)
-        self.model = self.finet_cls(encoder)
+        self.model = self.finet_cls(encoder, pooling=self.model_params['pooling'])
         # optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
         optimizer = {"optimizer": tf.keras.optimizers.Adam(learning_rate=lr, global_clipnorm=1.0)}
         """optimizer = {
