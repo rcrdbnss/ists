@@ -62,7 +62,6 @@ class STTransformerSequentialAttnMask(tf.keras.Model):
             self.embedder = TemporalEmbedding(
                 d_model=self.d_model,
                 kernel_size=self.kernel_size,
-                feature_mask=self.feature_mask,
                 time_features=self.time_features,
                 is_null_embedding=self.is_null_embedding,
                 activation=self.activation,

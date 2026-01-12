@@ -48,7 +48,6 @@ class IstfInterpCLS(tf.keras.Model):
         self.embedder = TemporalEmbeddingCLS(
             d_model=self.d_model,
             kernel_size=self.kernel_size,
-            feature_mask=self.feature_mask,
             time_features=self.time_features,
             activation=self.activation,
             l2_reg=self.l2_reg

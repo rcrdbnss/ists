@@ -4,99 +4,6 @@ import tensorflow as tf
 from ists_.preprocessing import TIME_N_VALUES
 
 
-
-
-class PhysicalSinusoidalEmbedding(tf.keras.layers.Layer):
-    """
-    Physically grounded sinusoidal embedding.
-    - Cyclical Features (Day, Month): Scaled by 2pi (Perfect wrapping).
-    - Linear Features (Position): Scaled by 1.0 (Monotonic, non-wrapping).
-    - Initialization: Log-Linear P (Geometric) based on Capacity K.
-    - Weights: W = S * exp(P)
-    """
-    def __init__(self, d_model, feature_configs):
-        """
-        feature_configs: List of dicts defining each feature.
-        Example:
-        [
-            {'name': 'Pos', 'K': 1000, 'type': 'linear'},     # Scaling = 1.0
-            {'name': 'Day', 'K': 31,   'type': 'cyclical'},   # Scaling = 2*pi
-            {'name': 'Month', 'K': 12,   'type': 'cyclical'}  # Scaling = 2*pi
-        ]
-        """
-        super(PhysicalSinusoidalEmbedding, self).__init__()
-        self.d_model = d_model
-        self.d_half = d_model // 2
-
-        n_features = len(feature_configs)
-
-        # Arrays to hold initialization and scaling factors
-        init_P = np.zeros((n_features, self.d_half), dtype=np.float32)
-        scaling_factors = np.zeros((n_features, 1), dtype=np.float32)
-        
-        for i, config in enumerate(feature_configs):
-            K = config['K']
-            feat_type = config.get('type', 'linear')
-            
-            # --- 1. Determine Scaling Factor ---
-            if feat_type == 'linear':
-                # Position: Max arg = 1.0 radian (Monotonic)
-                s = 1.0
-            else:
-                # Time: Max arg = 2pi radians (Cyclic)
-                s = 2 * np.pi
-                
-            scaling_factors[i] = s
-            
-            # --- 2. Initialize P (Log Frequencies) ---
-            # We want the lowest freq to complete 1 "unit" over K
-            # Linear: 1 wave = length K (freq = 1/K)
-            # Cyclic: 1 wave = length K (freq = 1/K)
-            # The scaling factor 's' handles the 2pi conversion later.
-            
-            # Bounds for Integers:
-            # Min Freq: 1/K
-            # Max Freq: 1.0
-            log_min = np.log(1.0 / K)
-            log_max = np.log(1.0) 
-            
-            # Generate random log-linear frequencies for this specific feature
-            # We sample d_half frequencies
-            row_P = np.random.uniform(log_min, log_max, size=(self.d_half,))
-            init_P[i, :] = row_P
-
-        # Create the Learnable Weights
-        self.log_frequencies = self.add_weight(
-            shape=(n_features, self.d_half),
-            initializer=tf.constant_initializer(init_P),
-            trainable=True,
-            name='log_frequencies_P'
-        )
-
-        # Scaling is FIXED (non-trainable structural constant)
-        # Shape (n_features, 1) for broadcasting
-        self.scaling_factors = tf.constant(scaling_factors, dtype=tf.float32)
-
-    def call(self, x):
-        # x shape: (batch, seq, n_features) - RAW INTEGERS
-        x = tf.cast(x, tf.float32)
-        
-        # 1. Recover W = exp(P)
-        W = tf.math.exp(self.log_frequencies)
-        
-        # 2. Apply Hybrid Scaling
-        # We multiply W by the scaling factor specific to each feature row
-        # W shape: (n_features, d_half)
-        # S shape: (n_features, 1)
-        W_scaled = W * self.scaling_factors
-        
-        # 3. Projection
-        projection = tf.tensordot(x, W_scaled, axes=[[-1], [0]])
-        
-        # 4. Activation (Sin + Cos pairs)
-        return tf.concat([tf.math.sin(projection), tf.math.cos(projection)], axis=-1)
-
-
 class PositionalEmbedding(tf.keras.layers.Layer):
     def __init__(self, d_model, max_len=5000, base=10000.0):
         super(PositionalEmbedding, self).__init__()
@@ -114,7 +21,7 @@ class PositionalEmbedding(tf.keras.layers.Layer):
         return self.pe[:, :tf.shape(x)[1], :]
 
 
-class FixedEmbedding(tf.keras.layers.Layer):
+'''class FixedEmbedding(tf.keras.layers.Layer):
     def __init__(self, c_in, d_model, base=10000.0):
         super(FixedEmbedding, self).__init__()
 
@@ -129,15 +36,62 @@ class FixedEmbedding(tf.keras.layers.Layer):
                                              trainable=False)
 
     def call(self, x):
+        return self.emb(x)'''
+
+
+'''def periodic_sinusoidal_encoding(length, depth):
+    depth = depth // 2
+    positions = np.arange(length)[:, np.newaxis]  # (seq, 1)
+
+    log_min = np.log(1.0 / length)
+    log_max = np.log(0.5)
+
+    angle_rates = np.linspace(log_max, log_min, depth)
+    angle_rads = 2 * np.pi * positions * angle_rates  # (pos, depth)
+
+    encoding = np.concatenate([np.sin(angle_rads), np.cos(angle_rads)], axis=-1)
+
+    return encoding'''
+
+
+def cyclical_encoding(length):
+    positions = np.arange(length)[:, np.newaxis]     # (seq, 1)
+    
+    angle_rate = 1 / length
+    angle_rads = 2 * np.pi * positions * angle_rate  # (pos, 1)
+
+    encoding = np.concatenate(
+        [np.sin(angle_rads), np.cos(angle_rads)],
+        axis=-1)  # (pos, 2)
+
+    return encoding
+
+
+class FixedEmbedding(tf.keras.layers.Layer):
+    def __init__(self, c_in, d_model):
+        super(FixedEmbedding, self).__init__()
+
+        # w = periodic_sinusoidal_encoding(c_in, d_model)
+        w = cyclical_encoding(c_in)
+
+        # Initialize the embedding layer with the precomputed weights
+        self.emb = tf.keras.layers.Embedding(
+            input_dim=c_in,
+            output_dim=2,
+            embeddings_initializer=tf.constant_initializer(w),
+            trainable=False
+        )
+
+    def call(self, x):
         return self.emb(x)
 
 
 class TemporalEmbedding(tf.keras.layers.Layer):
-    def __init__(self, d_model, kernel_size, feature_mask, time_features=None, activation="relu", l2_reg=None, mixed_strategy=False):
+    def __init__(self, d_model, kernel_size, time_features=None, activation="relu", l2_reg=None, custom_embedding=False):
         super().__init__()
         self.d_model = d_model
-        self.mixed_strategy = mixed_strategy  # New flag for Strategy B
-        self.time_features = time_features
+        self.custom_embedding = custom_embedding
+        self.time_features = [] if time_features is None else time_features
 
         l2_reg = tf.keras.regularizers.l2(l2_reg) if l2_reg else None
         self.embedding = tf.keras.layers.Conv1D(
@@ -148,85 +102,45 @@ class TemporalEmbedding(tf.keras.layers.Layer):
             kernel_regularizer=l2_reg
         )
 
-        # Feature mask to split values for time encodings and null encoding
-        self.feature_mask = np.array(feature_mask)
-        if time_features and len(self.feature_mask[self.feature_mask == 2]) != len(time_features):
-            raise ValueError('time_features must have the same dimension of the number of time features')
-
-        self.time_embedders = []
-        self.mixed_embedder = None
-
-        if self.mixed_strategy:
-            # Strategy B: 1 Position dim + N time feature dims
-            self.pos_base = 100
-            self.mixed_embedder = PhysicalSinusoidalEmbedding(d_model, feature_configs=(
-                [{'name': 'Pos', 'K': self.pos_base, 'type': 'linear'}] + 
-                ([{'name': f, 'K': TIME_N_VALUES[f], 'type': 'cyclical'} for f in time_features] if time_features else [])
-            ))
+        if self.custom_embedding:
+            ...  # fixme: to be implemented
         else:
             # Legacy Strategy: Separate Embeddings
-            self.pos_embedder = PositionalEmbedding(self.d_model, base=100)
-            if time_features:
-                self.time_embedders = [FixedEmbedding(d_model=d_model, c_in=TIME_N_VALUES[f], base=100) for f in time_features]
+            # self.pos_embedder = PositionalEmbedding(self.d_model, base=100)
+            self.pos_embedder = PositionalEmbedding(self.d_model - 2 * len(self.time_features), base=1000)
+            if self.time_features:
+                self.time_embedders = [FixedEmbedding(d_model=d_model, c_in=TIME_N_VALUES[f]) for f in time_features]  # base=100
 
-        self.feat_ids = [i for i, x in enumerate(feature_mask) if x == 0]
-        self.time_ids = [i for i, x in enumerate(feature_mask) if x == 2]
+    def build(self, x_shape, tt_shape):
+        if tt_shape[-1] != len(self.time_features):
+            raise ValueError(f'The number of time features provided ({tt_shape[-1]}) does not match the expected ({len(self.time_features)})')
 
-    def call(self, x, **kwargs):
-        # Extract value, null, and time array from the input matrix
-        values = tf.gather(x, self.feat_ids, axis=-1)
+    def call(self, x, tt, **kwargs):  # x: (B, T, C), tt: (B, T, F)
 
         # Embedding values
-        emb = self.embedding(values)
+        emb = self.embedding(x)
 
         # This factor sets the relative scale of the embedding and positional_encoding.
         emb *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
         
-        if self.mixed_strategy:
-            # --- STRATEGY B Implementation ---
-            # 1. Get raw time features and cast to float
-            arr_times = tf.cast(tf.gather(x, self.time_ids, axis=-1), tf.float32)
-            
-            # 2. Normalize time features (0 to 1) using known max values
-            # We iterate to divide each feature by its specific max value
-            norm_times_list = []
-            for i, feat_name in enumerate(self.time_features):
-                max_val = float(TIME_N_VALUES[feat_name])
-                # Slice, normalize, and keep dims
-                norm_times_list.append(arr_times[:, :, i:i+1] / max_val)
-            norm_times = tf.concat(norm_times_list, axis=-1) if norm_times_list else arr_times
-
-            # 3. Create Position sequence (0..L), cast and normalize
-            seq_len = tf.shape(x)[1]
-            pos_seq = tf.range(seq_len, dtype=tf.float32)
-            pos_seq = tf.expand_dims(pos_seq, 0) # Batch dim
-            pos_seq = tf.expand_dims(pos_seq, -1) # Feature dim
-            # Broadcast to batch size
-            pos_seq = tf.broadcast_to(pos_seq, [tf.shape(x)[0], seq_len, 1])
-            # Normalize position
-            norm_pos = pos_seq / self.pos_base
-            # norm_pos = pos_seq / tf.cast(seq_len, tf.float32)
-
-            # 4. Concatenate [Position, Time1, Time2...]
-            # mixed_input = tf.concat([pos_seq, arr_times], axis=-1)  # raw values
-            mixed_input = tf.concat([norm_pos, norm_times], axis=-1)
-
-            # 5. Apply Mixed Sinusoidal Layer
-            # We add this to the value embedding (similar to how pos encoding is usually added)
-            emb *= tf.math.sqrt(1.0 + 1.0)  # fixme: time/pos + variable
-            emb = emb + self.mixed_embedder(mixed_input)
-
-            return emb
-
+        if self.custom_embedding:
+            return None  # fixme: to be implemented
         # --- Legacy Implementation ---
-        emb *= tf.math.sqrt(tf.cast(len(self.time_embedders) + 1 + 1, tf.float32))  # fixme: time features + position + variable
-        emb = emb + self.pos_embedder(x)
+        # emb *= tf.math.sqrt(tf.cast(len(self.time_features) + 1 + 1, tf.float32))  # fixme: time features + position + variable
+        emb *= tf.math.sqrt(tf.cast(1 + 1, tf.float32))  # fixme: position + variable
 
-        if self.time_embedders:
-            arr_times = tf.gather(x, self.time_ids, axis=-1)
+        pos_emb = self.pos_embedder(x)
+        pos_emb = [tf.tile(pos_emb, [tf.shape(x)[0], 1, 1])]
+
+        if self.time_features:
+            arr_times = tt
             for i, time_embedder in enumerate(self.time_embedders):
                 time_emb = time_embedder(tf.gather(arr_times, i, axis=-1))
-                emb = emb + time_emb
+                # emb = emb + time_emb
+                pos_emb.append(time_emb)
+        pos_emb = tf.concat(pos_emb, axis=-1)
+
+        emb = emb + pos_emb
 
         return emb
 

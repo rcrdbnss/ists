@@ -32,7 +32,6 @@ class EncoderVanilla(tf.keras.layers.Layer):
             self.emb = TemporalEmbedding(
                 d_model=d_model,
                 kernel_size=kernel_size,
-                feature_mask=feature_mask,
                 time_features=time_features
             )
             self.dropout = tf.keras.layers.Dropout(dropout_rate)

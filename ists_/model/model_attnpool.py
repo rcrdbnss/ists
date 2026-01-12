@@ -25,9 +25,9 @@ class ISTEncoder(tf.keras.Model):
     ):
         super().__init__()
 
-        feature_mask = np.array(feature_mask)
-        self.feature_mask = feature_mask
-        self.raw_feature_id = np.where(self.feature_mask == 0)[0][0]
+        self.feature_mask = np.array(feature_mask)
+        self.raw_feature_ids = np.where(self.feature_mask == 0)[0].tolist()
+        self.time_features_ids = np.where(self.feature_mask == 2)[0].tolist()
 
         self.kernel_size = kernel_size
         self.d_model = d_model
@@ -44,11 +44,10 @@ class ISTEncoder(tf.keras.Model):
         self.embedder = TemporalEmbedding(
             d_model=self.d_model,
             kernel_size=self.kernel_size,
-            feature_mask=self.feature_mask,
             time_features=self.time_features,
             activation=self.activation,
             l2_reg=self.l2_reg,
-            mixed_strategy=True
+            # custom_embedding=True
         )
         self.layernorm = tf.keras.layers.LayerNormalization() #rms_scaling=True)
         self.dropout = tf.keras.layers.Dropout(self.dropout_rate)
@@ -69,7 +68,7 @@ class ISTEncoder(tf.keras.Model):
             self.encoder_layers = [new_encoder_layer() for _ in range(self.num_layers)]
 
         self.variable_embeddings = None
-        self.ve_scale = 1.0
+        self.ve_scale = tf.math.sqrt(self.d_model/2)
 
         self.static_feats_ids = kwargs.get('static_feats_ids', None)
 
@@ -86,14 +85,6 @@ class ISTEncoder(tf.keras.Model):
             # trainable=False,
         )
 
-        self.ve_scale = self.add_weight(
-            name='ve_scale',
-            shape=(),
-            initializer=tf.keras.initializers.Constant(tf.math.sqrt(tf.cast(self.d_model/2, tf.float32))), #'ones',
-            # trainable=True,
-            trainable=False,
-        )
-
     def call(self, inputs):  # (b, v, t, f)
         # exg_x, _ = inputs
         # X, attn_mask = exg_x
@@ -103,7 +94,9 @@ class ISTEncoder(tf.keras.Model):
         B, V, T = X_shape[0], X_shape[1], X_shape[2]
 
         X = tf.reshape(X, (V * B, T, -1))  # (b, v, t, f) -> (v*b, t, f)
-        X = self.embedder(X)
+        tt = tf.gather(X, self.time_features_ids, axis=-1)  # (v*b, t, time_f)
+        X = tf.gather(X, self.raw_feature_ids, axis=-1)  # (v*b, t, f') only raw features
+        X = self.embedder(X, tt)
         X = tf.reshape(X, (B, V, T, -1))  # (v*b, t, e) -> (b, v, t, e)
 
 
@@ -134,7 +127,7 @@ class ISTInterpolationAttnPool(tf.keras.Model):
     def __init__(self, encoder: ISTEncoder):
         super().__init__()
         self.encoder = encoder
-        self.raw_feature_id = encoder.raw_feature_id
+        self.raw_feature_id = encoder.raw_feature_ids[0]
         self.d_model = encoder.d_model
         self.dff = encoder.dff
         self.activation = encoder.activation
@@ -227,7 +220,7 @@ class ISTForecastingAttnPool(tf.keras.Model):
     def __init__(self, encoder: ISTEncoder, pooling='attn'):
         super().__init__()
         self.encoder = encoder
-        self.raw_feature_id = encoder.raw_feature_id
+        self.raw_feature_id = encoder.raw_feature_ids[0]
         self.d_model = encoder.d_model
         self.num_heads = encoder.num_heads
         self.dff = encoder.dff

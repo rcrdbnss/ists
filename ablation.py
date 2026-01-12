@@ -595,13 +595,16 @@ def ablation(
         name += '_CLS'"""
 
         """train_test_dict['params']['model_params']['model_type'] = "istf_interp_cls"
-        name += '_PretrCLS'
-        # train_test_dict = sample_aux_mask(train_test_dict, rate=0.1)"""
+        name += '_PretrCLS'"""
 
         train_test_dict['params']['model_params']['model_type'] = "istf_attnpool"
         name += '_AttnPool' if train_test_dict['params']['model_params']['nn_params']['pooling'] == 'attn' else '_MeanPool'
-        # name += '_MeanPool'
-        # train_test_dict = sample_aux_mask(train_test_dict, rate=0.1)
+
+        """train_test_dict['params']['model_params']['model_type'] = "istf_rope"
+        name = name + (
+            '_AttnPool' if train_test_dict['params']['model_params']['nn_params']['pooling'] == 'attn' else '_MeanPool'
+        )
+        name += '_RoPE'  # rotary positional embeddings"""
 
         with open(pickle_file.replace(".pickle", "_aux.pickle"), "rb") as f:
             train_test_dict_aux = pickle.load(f)
@@ -664,10 +667,12 @@ def ablation(
         # name += "_W15"  # window 15, + optimized version
         # name += "_"
         # name += "_minmax"
-        name += "_b100"  # sinusoidal embedding with base=100
+        name += "_b1000"  # sinusoidal embedding with base=100
         # name += "_Prenorm"  # include norm before heads
         # name += "_EmbScaleD"
-        name += "_TPEmbD"  # time features and position embedded together
+        # name += "_TPEmbD"  # time features and position embedded together
+        # name += "_TembPrd"  # time features embedded as periodic
+        name += "_P|T"
 
         """train_test_dict['params']['model_params']['encoder_cls'] = "ParallelEncoder"
         name += '_P'"""

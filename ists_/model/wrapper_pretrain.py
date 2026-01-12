@@ -6,6 +6,7 @@ import tensorflow as tf
 
 from ists_.model.model_cls import ISTForecastingCLS, ISTInterpolationCLS, ISTEncoderCLS
 from ists_.model.model_attnpool import ISTEncoder, ISTInterpolationAttnPool, ISTForecastingAttnPool
+from ists_.model.model_rope import EncoderLGARope
 from ists_.model.wrapper import TimingCallback
 
 
@@ -135,8 +136,8 @@ class ModelWrapper:
         self.model_params = model_params
         self.loss = loss
         self.lr = lr
-        # self.dev = dev
-        self.dev = False
+        self.dev = dev
+        # self.dev = False
 
         self.null_id = np.where(np.array(self.model_params['feature_mask']) == 1)[0][0]
         self.model_params['feature_mask'] = np.delete(self.model_params['feature_mask'], self.null_id)
@@ -148,6 +149,7 @@ class ModelWrapper:
         self.enc_cls, self.pretr_cls, self.finet_cls = {
             'istf_interp_cls': (ISTEncoderCLS, ISTInterpolationCLS, ISTForecastingCLS),
             'istf_attnpool': (ISTEncoder, ISTInterpolationAttnPool, ISTForecastingAttnPool),
+            'istf_rope': (EncoderLGARope, ISTInterpolationAttnPool, ISTForecastingAttnPool),
         }[model_type]
 
     def load_pretrained_checkpoint(self, path: str):
@@ -360,8 +362,9 @@ class ModelWrapper:
         if hasattr(self.model, 'mean_head'): self.model.mean_head.trainable = True
         if hasattr(self.model, 'mean_pool'): self.model.mean_pool.trainable = True
         # if hasattr(self.model.encoder, 'variable_embeddings'): self.model.encoder.variable_embeddings.trainable = False
-        for emb in self.model.encoder.embedder.time_embedders:
-            emb.trainable = False  # fixed embeddings
+        if hasattr(self.model.encoder.embedder, 'time_embedders'):
+            for emb in self.model.encoder.embedder.time_embedders:
+                emb.trainable = False  # fixed embeddings
         self.model.summary(expand_nested=True)
 
         optimizer = {"optimizer": tf.keras.optimizers.Adam(learning_rate=lr, global_clipnorm=1.0)}

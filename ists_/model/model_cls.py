@@ -14,8 +14,8 @@ class PositionalEmbeddingCLS(PositionalEmbedding):
 
 class TemporalEmbeddingCLS(TemporalEmbedding):
 
-    def __init__(self, d_model, kernel_size, feature_mask, time_features=None, activation="relu", l2_reg=None):
-        super().__init__(d_model, kernel_size, feature_mask, False, time_features, activation, l2_reg)
+    def __init__(self, d_model, kernel_size, time_features=None, activation="relu", l2_reg=None):
+        super().__init__(d_model, kernel_size, False, time_features, activation, l2_reg)
         self.pos_embedder = PositionalEmbeddingCLS(self.d_model)
 
     def build(self, input_shape):
@@ -76,7 +76,6 @@ class ISTEncoderCLS(tf.keras.Model):
         self.embedder = TemporalEmbeddingCLS(
             d_model=self.d_model,
             kernel_size=self.kernel_size,
-            feature_mask=self.feature_mask,
             time_features=self.time_features,
             activation=self.activation,
             l2_reg=self.l2_reg
