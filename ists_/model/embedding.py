@@ -317,7 +317,8 @@ class TemporalEmbedding(tf.keras.layers.Layer):
         
         if self.custom_embedding == 3:
             # This factor sets the relative scale of the embedding and positional_encoding.
-            emb *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
+            # emb *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))  ##1
+            emb = emb / (tf.sqrt(tf.reduce_mean(tf.square(emb), axis=-1, keepdims=True) + 1e-6))  # norm=sqrt(d_model)  ##2
             emb *= tf.math.sqrt(tf.cast(1 + 1, tf.float32))  # fixme: position + variable
 
             time_emb = []
@@ -348,27 +349,27 @@ class TemporalEmbedding(tf.keras.layers.Layer):
         return emb
 
 
-def variable_embeddings_regular_simplex(num_variables: int, embedding_dim: int):
-    basis_vectors = np.eye(num_variables)
+def centered_unit_simplex(N: int):
+    basis_vectors = np.eye(N)
 
     centroid = np.mean(basis_vectors, axis=0, keepdims=True)
     centered_vectors = basis_vectors - centroid
 
-    scaling_factor = np.sqrt(float(num_variables) / float(num_variables - 1))  # * np.sqrt(embedding_dim / 2)
+    scaling_factor = np.sqrt(float(N) / float(N - 1))
     scaled_vectors = centered_vectors * scaling_factor
 
-    padding_dims = max(0, embedding_dim - num_variables)
+    return scaled_vectors
+
+
+def centered_unit_simplex_embeddings(N: int, embedding_dim: int):
+    scaled_vectors = centered_unit_simplex(N)
+
+    padding_dims = max(0, embedding_dim - N)
 
     paddings = ((0, 0), (0, padding_dims))
-    final_embeddings = np.pad(
+    padded_embeddings = np.pad(
         scaled_vectors, paddings, "constant", constant_values=0
     )
-
-    return final_embeddings
-
-
-def variable_embeddings_regular_simplex_dense(num_variables: int, embedding_dim: int):
-    padded_embeddings = variable_embeddings_regular_simplex(num_variables, embedding_dim)
 
     # Create a random square matrix of shape (E, E)
     random_matrix = np.random.randn(embedding_dim, embedding_dim)

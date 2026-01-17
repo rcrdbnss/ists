@@ -1,7 +1,7 @@
 import numpy as np
 import tensorflow as tf
 
-from ists_.model.embedding import TemporalEmbedding, variable_embeddings_regular_simplex_dense
+from ists_.model.embedding import TemporalEmbedding, centered_unit_simplex_embeddings
 from ists_.model.model_cls import MVEncoderLayerLGA, compute_masked_mean
 
 
@@ -75,7 +75,7 @@ class ISTEncoder(tf.keras.Model):
     def build(self, input_shape):
         V = input_shape[0][1]
 
-        variable_embeddings = variable_embeddings_regular_simplex_dense(V, self.d_model)
+        variable_embeddings = centered_unit_simplex_embeddings(V, self.d_model)
         variable_embeddings = variable_embeddings[tf.newaxis, :, tf.newaxis, :]  # (1, V, 1, d_model)
 
         self.variable_embeddings = self.add_weight(

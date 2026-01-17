@@ -1,7 +1,8 @@
 import numpy as np
 import tensorflow as tf
 
-from ists_.model.embedding import variable_embeddings_regular_simplex_dense, TemporalEmbedding, AnglesEmbedding
+from ists_.model.embedding import centered_unit_simplex_embeddings, TemporalEmbedding, AnglesEmbedding, \
+    centered_unit_simplex
 from ists_.model.rope import FeedForward, apply_rotary_pos_emb
 from ists_.model.rope import RoPEMultiHeadAttention, GlobalSelfAttention
 from ists_.preprocessing import TIME_N_VALUES
@@ -166,15 +167,20 @@ class EncoderLGARope(tf.keras.Model):
         B, V, T, _ = input_shape
         self.B, self.V, self.T = B, V, T
 
-        variable_embeddings = variable_embeddings_regular_simplex_dense(V, self.d_model)
+        '''variable_embeddings = centered_unit_simplex_embeddings(V, self.d_model)
         variable_embeddings = variable_embeddings[tf.newaxis, :, tf.newaxis, :]  # (1, V, 1, d_model)
-
         self.variable_embeddings = self.add_weight(
             shape=(1, V, 1, self.d_model),
             initializer=tf.keras.initializers.Constant(variable_embeddings),
             trainable=True,
             # trainable=False,
-        )
+        )'''
+
+        variable_embeddings = centered_unit_simplex(V)
+        variable_embeddings = variable_embeddings[tf.newaxis, :, tf.newaxis, :]  # (1, V, 1, V)
+        self.ve_proj = tf.keras.layers.Dense(self.d_model, kernel_regularizer=tf.keras.regularizers.l2(self.l2_reg), name='ve_proj')
+        self.variable_embeddings = tf.constant(variable_embeddings)
+
 
     def get_freq_generator_input(self, tt):
         tt_shape = tf.shape(tt)
@@ -204,7 +210,8 @@ class EncoderLGARope(tf.keras.Model):
         X = tf.reshape(X, (B, V, T, -1))  # (b*v, t, e) -> (b, v, t, e)
         # rotary_angles = tf.reshape(rotary_angles, (B, V, 1, T, -1))  # (b*v, 1, t, head_dim) -> (b, v, 1, t, head_dim)
 
-        variable_embeddings = self.variable_embeddings
+        # variable_embeddings = self.variable_embeddings  ##1
+        variable_embeddings = self.ve_proj(self.variable_embeddings)  # (1, V, 1, d_model)  ##2
         variable_embeddings /= tf.norm(variable_embeddings, axis=-1, keepdims=True)  # normalize to unit length
         variable_embeddings = variable_embeddings * self.ve_scale  # scale
         X = X + variable_embeddings

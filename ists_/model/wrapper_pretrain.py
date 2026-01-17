@@ -129,15 +129,15 @@ class ModelWrapper:
             model_type: str,
             loss: str = 'mse',
             lr: float = 0.001,
-            dev = False,
+            run_eagerly = False,
             *args, **kwargs
     ):
         self.checkpoint_dir = checkpoint_dir
         self.model_params = model_params
         self.loss = loss
         self.lr = lr
-        self.dev = dev
-        # self.dev = False
+        # self.run_eagerly = run_eagerly
+        self.run_eagerly = False
 
         self.null_id = np.where(np.array(self.model_params['feature_mask']) == 1)[0][0]
         self.model_params['feature_mask'] = np.delete(self.model_params['feature_mask'], self.null_id)
@@ -239,7 +239,7 @@ class ModelWrapper:
         optimizer = tf.keras.optimizers.Adam(learning_rate=lr, global_clipnorm=1.0)
         self.model.compile(
             optimizer=optimizer,
-            run_eagerly=self.dev,
+            run_eagerly=self.run_eagerly,
         )
 
         self.history = self.model.fit(
@@ -321,7 +321,7 @@ class ModelWrapper:
         self.load_pretrained_checkpoint(pretrained_path)
         '''self.model.summary(expand_nested=True)  # COMMENT FROM HERE FOR NO WARMUP
 
-        self.model.compile(loss=self.loss, **optimizer, metrics=['mae', 'mse'], run_eagerly=self.dev)
+        self.model.compile(loss=self.loss, **optimizer, metrics=['mae', 'mse'], run_eagerly=self.run_eagerly)
 
         checkpoint_path = os.path.join(self.checkpoint_dir, 'cp.weights.h5')
         model_checkpoint = ModelCheckpointCallback(checkpoint_path)
@@ -372,7 +372,7 @@ class ModelWrapper:
             "encoder_optimizer": tf.keras.optimizers.Adam(learning_rate=1e-4),
             "head_optimizer": tf.keras.optimizers.Adam(learning_rate=lr)
         }"""
-        self.model.compile(loss=self.loss, **optimizer, metrics=['mae', 'mse'], run_eagerly=self.dev)
+        self.model.compile(loss=self.loss, **optimizer, metrics=['mae', 'mse'], run_eagerly=self.run_eagerly)
 
         # reinitialize callbacks
         checkpoint_path = os.path.join(self.checkpoint_dir, 'cp.weights.h5')
