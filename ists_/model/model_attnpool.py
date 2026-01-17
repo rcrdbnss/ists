@@ -47,7 +47,7 @@ class ISTEncoder(tf.keras.Model):
             time_features=self.time_features,
             activation=self.activation,
             l2_reg=self.l2_reg,
-            # custom_embedding=True
+            custom_embedding=True
         )
         self.layernorm = tf.keras.layers.LayerNormalization() #rms_scaling=True)
         self.dropout = tf.keras.layers.Dropout(self.dropout_rate)

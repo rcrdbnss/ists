@@ -597,14 +597,16 @@ def ablation(
         """train_test_dict['params']['model_params']['model_type'] = "istf_interp_cls"
         name += '_PretrCLS'"""
 
-        train_test_dict['params']['model_params']['model_type'] = "istf_attnpool"
-        name += '_AttnPool' if train_test_dict['params']['model_params']['nn_params']['pooling'] == 'attn' else '_MeanPool'
+        """train_test_dict['params']['model_params']['model_type'] = "istf_attnpool"
+        name += '_AttnPool' if train_test_dict['params']['model_params']['nn_params']['pooling'] == 'attn' else '_MeanPool'"""
 
-        """train_test_dict['params']['model_params']['model_type'] = "istf_rope"
+        train_test_dict['params']['model_params']['model_type'] = "istf_rope"
         name = name + (
             '_AttnPool' if train_test_dict['params']['model_params']['nn_params']['pooling'] == 'attn' else '_MeanPool'
         )
-        name += '_RoPE'  # rotary positional embeddings"""
+        name += '_RoPE'  # rotary positional embeddings
+        # train_test_dict['params']['model_params']['nn_params']['pre_layernorm'] = True
+        # train_test_dict['params']['model_params']['nn_params']['rms_scaling'] = True
 
         with open(pickle_file.replace(".pickle", "_aux.pickle"), "rb") as f:
             train_test_dict_aux = pickle.load(f)
@@ -668,11 +670,13 @@ def ablation(
         # name += "_"
         # name += "_minmax"
         name += "_b1000"  # sinusoidal embedding with base=100
-        # name += "_Prenorm"  # include norm before heads
+        # name += "_PreRMSnorm"  # include norm before heads
         # name += "_EmbScaleD"
         # name += "_TPEmbD"  # time features and position embedded together
         # name += "_TembPrd"  # time features embedded as periodic
-        name += "_P|T"
+        # name += "_P|T"
+        # name += "LearnTEnc"
+        name += "_Emb3"
 
         """train_test_dict['params']['model_params']['encoder_cls'] = "ParallelEncoder"
         name += '_P'"""
