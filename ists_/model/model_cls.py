@@ -412,6 +412,8 @@ class MVEncoderLayerLGA(ists_.model.model.EncoderLocalGlobalAttnMaskLayer):
             'key_dim': kwargs['d_model'] // kwargs['num_heads'],
             'dropout': kwargs['dropout_rate'],
             'kernel_regularizer': tf.keras.regularizers.l2(kwargs['l2_reg']) if kwargs['l2_reg'] else None,
+            'pre_layernorm': kwargs.get('pre_layernorm', False),
+            'rms_scaling': kwargs.get('rms_scaling', False),
         }
         # self.cls_attn = CrossAttention(**self.attn_kwargs)
 

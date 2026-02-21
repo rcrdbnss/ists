@@ -11,6 +11,7 @@ import tensorflow as tf
 
 from data_step import parse_params, data_step, get_conf_name
 from ists_.preprocessing import TIME_N_VALUES
+from ists_.model.model_rope import get_optimal_dff
 
 
 def no_ablation(train_test_dict) -> dict:
@@ -597,16 +598,31 @@ def ablation(
         """train_test_dict['params']['model_params']['model_type'] = "istf_interp_cls"
         name += '_PretrCLS'"""
 
-        """train_test_dict['params']['model_params']['model_type'] = "istf_attnpool"
-        name += '_AttnPool' if train_test_dict['params']['model_params']['nn_params']['pooling'] == 'attn' else '_MeanPool'"""
+        train_test_dict['params']['model_params']['model_type'] = "istf_attnpool"
+        name += {
+            'mean': '_MeanPool',
+            'attn': '_AttnPool',
+        }[train_test_dict['params']['model_params']['nn_params']['pooling']]
 
-        train_test_dict['params']['model_params']['model_type'] = "istf_rope"
-        name = name + (
-            '_AttnPool' if train_test_dict['params']['model_params']['nn_params']['pooling'] == 'attn' else '_MeanPool'
-        )
-        name += '_RoPE'  # rotary positional embeddings
+        """train_test_dict['params']['model_params']['model_type'] = "istf_rope"
+        name += {
+            'mean': '_MeanPool',
+            'last': '_LastTokenPool',
+            'attn': '_AttnPool',
+            'attn_pos': '_AttnPosPool',  # add sinusoidal positional embedding to keys
+            'attn_pos_bias': '_AttnPosBiasPool',  # add learnable positional bias to attention scores
+        }[train_test_dict['params']['model_params']['nn_params']['pooling']]
+        max_freq = 1000
+        train_test_dict['params']['model_params']['nn_params']['max_freq'] = max_freq
+        name += f'_RoPE_b{max_freq}'  # rotary positional embeddings"""
+
         # train_test_dict['params']['model_params']['nn_params']['pre_layernorm'] = True
-        # train_test_dict['params']['model_params']['nn_params']['rms_scaling'] = True
+        train_test_dict['params']['model_params']['nn_params']['rms_scaling'] = True
+        train_test_dict['params']['model_params']['nn_params']['activation'] = 'swiglu'
+        d_model = train_test_dict['params']['model_params']['nn_params']['d_model']
+        dff = train_test_dict['params']['model_params']['nn_params']['dff']
+        dff_swiglu = get_optimal_dff(d_model)
+        name = name.replace(f'dff{dff}', f'dff{dff_swiglu}')
 
         with open(pickle_file.replace(".pickle", "_aux.pickle"), "rb") as f:
             train_test_dict_aux = pickle.load(f)
@@ -645,7 +661,7 @@ def ablation(
         # name += "_TFW"
         # name += "_R1"  # 1 regressor for multiple outputs
         # name += "_KMask"  # +GAwithCLS, +GAnoCLS, +CLSAttn
-        name += "_LVEmbS+"  # Learnable VarEmbs initialized as regular simplex + learnable scale
+        # name += "_LVEmbS@"  # Learnable VarEmbs initialized as regular simplex + learnable scale
         # name += "_PredAll"
         # name += "_Add2Enc"
         # name += "_LGSW"  # Local Global Shared Weights
@@ -670,7 +686,9 @@ def ablation(
         # name += "_"
         # name += "_minmax"
         name += "_b1000"  # sinusoidal embedding with base=100
-        # name += "_PreRMSnorm"  # include norm before heads
+        # name += "_PreLN"
+        name += "_RMSnorm"
+        name += "_SwiGLU"
         # name += "_EmbScaleD"
         # name += "_TPEmbD"  # time features and position embedded together
         # name += "_TembPrd"  # time features embedded as periodic
@@ -738,10 +756,9 @@ def ablation(
         results[name] = met
         # pd.DataFrame(results).T.to_csv(results_file, index=True)
         columns = (
-            "run_id,test_r2,test_mae,test_mse,test_wMAPE,valid_r2,val_mae,val_mse,val_wMAPE,"
-            "pretr_test_mae,pretr_test_mse,pretr_test_wMAPE,"
+            "run_id,test_r2,test_mae,test_mse,test_wMAPE,val_r2,val_mae,val_mse,val_wMAPE,"
+            "pretr_test_mae,pretr_test_mse,pretr_test_wMAPE"
         ).split(',')
-        columns = [c for c in columns if c in met]
         pd.DataFrame.from_dict(results, orient='index')[columns].to_csv(results_file, index=True)
 
         curves_path = results_file.replace('.csv', '')

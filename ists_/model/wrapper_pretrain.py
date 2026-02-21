@@ -5,7 +5,7 @@ import numpy as np
 import tensorflow as tf
 
 from ists_.model.model_cls import ISTForecastingCLS, ISTInterpolationCLS, ISTEncoderCLS
-from ists_.model.model_attnpool import ISTEncoder, ISTInterpolationAttnPool, ISTForecastingAttnPool
+from ists_.model.model_attnpool import ISTEncoder, ISTInterpolation, ISTForecasting
 from ists_.model.model_rope import EncoderLGARope
 from ists_.model.wrapper import TimingCallback
 
@@ -136,8 +136,8 @@ class ModelWrapper:
         self.model_params = model_params
         self.loss = loss
         self.lr = lr
-        # self.run_eagerly = run_eagerly
-        self.run_eagerly = False
+        self.run_eagerly = run_eagerly
+        # self.run_eagerly = False
 
         self.null_id = np.where(np.array(self.model_params['feature_mask']) == 1)[0][0]
         self.model_params['feature_mask'] = np.delete(self.model_params['feature_mask'], self.null_id)
@@ -148,8 +148,8 @@ class ModelWrapper:
 
         self.enc_cls, self.pretr_cls, self.finet_cls = {
             'istf_interp_cls': (ISTEncoderCLS, ISTInterpolationCLS, ISTForecastingCLS),
-            'istf_attnpool': (ISTEncoder, ISTInterpolationAttnPool, ISTForecastingAttnPool),
-            'istf_rope': (EncoderLGARope, ISTInterpolationAttnPool, ISTForecastingAttnPool),
+            'istf_attnpool': (ISTEncoder, ISTInterpolation, ISTForecasting),
+            'istf_rope': (EncoderLGARope, ISTInterpolation, ISTForecasting),
         }[model_type]
 
     def load_pretrained_checkpoint(self, path: str):
@@ -231,7 +231,7 @@ class ModelWrapper:
         encoder = self.enc_cls(**self.model_params)
         self.model = self.pretr_cls(encoder)
 
-        X_dummy = tuple(tuple(np.zeros_like(x1[:batch_size]) for x1 in x) for x in X)
+        X_dummy = tuple(tuple(x1[:batch_size] for x1 in x) for x in X)
         self.model(X_dummy)
         self.model.summary(expand_nested=True)
         # return
@@ -305,8 +305,9 @@ class ModelWrapper:
         lr = 1e-4  # reduce learning rate for warmup and finetuning
         lr = lr_schedule_warmup_linear(lr, warmup_steps=500)
 
+        pooling = self.model_params.pop('pooling', 'attn')
         encoder = self.enc_cls(**self.model_params)
-        self.model = self.finet_cls(encoder, pooling=self.model_params['pooling'])
+        self.model = self.finet_cls(encoder, pooling=pooling)
         # optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
         optimizer = {"optimizer": tf.keras.optimizers.Adam(learning_rate=lr, global_clipnorm=1.0)}
         """optimizer = {
@@ -314,7 +315,7 @@ class ModelWrapper:
             "head_optimizer": tf.keras.optimizers.Adam(learning_rate=lr)
         }"""
 
-        X_dummy = tuple(tuple(np.zeros_like(x1[:batch_size]) for x1 in x) for x in X)
+        X_dummy = tuple(tuple(x1[:batch_size] for x1 in x) for x in X)
         self.model(X_dummy)
 
         pretrained_path = os.path.join(self.checkpoint_dir, 'pretr_encoder.weights.h5')
@@ -365,6 +366,14 @@ class ModelWrapper:
         if hasattr(self.model.encoder.embedder, 'time_embedders'):
             for emb in self.model.encoder.embedder.time_embedders:
                 emb.trainable = False  # fixed embeddings
+        if hasattr(self.model.encoder.embedder, 'pos_embedder') and hasattr(self.model.encoder.embedder.pos_embedder, 'time_embedders'):
+            for emb in self.model.encoder.embedder.pos_embedder.time_embedders:
+                emb.trainable = False
+        if hasattr(self.model.encoder.embedder, 'pos_embedder') and hasattr(self.model.encoder.embedder.pos_embedder, 'time_lookup'):
+            self.model.encoder.embedder.pos_embedder.time_lookup.trainable = False
+        if hasattr(self.model.encoder.embedder, 'time_lookup'):
+            self.model.encoder.embedder.time_lookup.trainable = False
+        # self.model.encoder.embedder.variable_embeddings.trainable = False
         self.model.summary(expand_nested=True)
 
         optimizer = {"optimizer": tf.keras.optimizers.Adam(learning_rate=lr, global_clipnorm=1.0)}

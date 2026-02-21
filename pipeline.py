@@ -49,7 +49,7 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
         model_params=nn_params,
         loss=loss,
         lr=lr,
-        dev=train_test_dict['params']['path_params']['dev']
+        run_eagerly=train_test_dict['params']['path_params']['dev']
     )
 
     static_args = {
@@ -79,11 +79,11 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
         metrics_pretr, curves_pretr = {}, {}
         curves_pretr.update({
             'loss': model.history.history['loss'],
-            'mse_avg': model.history.history['mse_avg'],
+            'mse_avg': model.history.history['mse_avg'] if 'mse_avg' in model.history.history else [],
             'mse': model.history.history['mse'],
             'mse_obs': model.history.history['mse_obs'],
             'val_loss': model.history.history['val_loss'],
-            'val_mse_avg': model.history.history['val_mse_avg'],
+            'val_mse_avg': model.history.history['val_mse_avg'] if 'val_mse_avg' in model.history.history else [],
             'val_mse': model.history.history['val_mse'],
             'val_mse_obs': model.history.history['val_mse_obs'],
         })

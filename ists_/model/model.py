@@ -3,6 +3,7 @@ import tensorflow as tf
 
 from ists_.model.embedding import TemporalEmbedding
 from ists_.model.encoder import GlobalSelfAttention, FeedForward, MVEncoderLayer
+from ists_.model.model_rope import SwiGLUFFN
 
 
 class STTransformerSequentialAttnMask(tf.keras.Model):
@@ -73,10 +74,11 @@ class STTransformerSequentialAttnMask(tf.keras.Model):
             self.embedder = tf.keras.layers.Lambda(lambda x: x)
             self.dropout = tf.keras.layers.Lambda(lambda x: x)
 
-        if self.encoder_cls == "ParallelEncoder":
+        encoder_cls = SequentialEncoderAttnMask
+        '''if self.encoder_cls == "ParallelEncoder":
             encoder_cls = ParallelEncoder
         else:
-            encoder_cls = SequentialEncoderAttnMask
+            encoder_cls = SequentialEncoderAttnMask'''
         self.encoder = encoder_cls(
             d_model=(self.d_model if self.do_emb else len(self.feature_mask)),
             num_heads=self.num_heads,
@@ -250,7 +252,7 @@ class SequentialEncoderAttnMask(tf.keras.layers.Layer):
         return x, exg_ctx, spt_ctx
 
 
-class ParallelEncoder(tf.keras.layers.Layer):
+'''class ParallelEncoder(tf.keras.layers.Layer):
 
     def __switched_off(self, x, attn_mask=None):
         return x
@@ -315,12 +317,13 @@ class ParallelEncoder(tf.keras.layers.Layer):
             exg_ctx = tf.zeros_like(exg_ctx)[0:0]
         if not self.do_spt:
             spt_ctx = tf.zeros_like(spt_ctx)[0:0]
-        return x, exg_ctx, spt_ctx
+        return x, exg_ctx, spt_ctx'''
 
 
 class EncoderLocalGlobalAttnMaskLayer(tf.keras.layers.Layer):
 
-    def __init__(self, *, d_model, num_heads, dff, activation='relu', dropout_rate=0.1, l2_reg=None):
+    def __init__(self, *, d_model, num_heads, dff, activation='relu', dropout_rate=0.1, l2_reg=None,
+                 pre_layernorm=False, rms_scaling=False, **kwargs):
         super().__init__()
 
         reg = {}
@@ -329,26 +332,34 @@ class EncoderLocalGlobalAttnMaskLayer(tf.keras.layers.Layer):
 
         self.loc_attn = GlobalSelfAttention(
             num_heads=num_heads,
-            # key_dim=d_model,
             key_dim=d_model // num_heads,
             dropout=dropout_rate,
-            **reg
+            **reg,
+            pre_layernorm=pre_layernorm, rms_scaling=rms_scaling
         )
 
         self.glb_attn = GlobalSelfAttention(
             num_heads=num_heads,
-            # key_dim=d_model,
             key_dim=d_model // num_heads,
             dropout=dropout_rate,
-            **reg
+            **reg,
+            pre_layernorm=pre_layernorm, rms_scaling=rms_scaling
         )
 
-        self.ffn = FeedForward(
-            d_model=d_model,
-            dff=dff,
-            activation=activation,
-            dropout_rate=dropout_rate, **reg
-        )
+        if activation == 'swiglu':
+            self.ffn = SwiGLUFFN(
+                d_model=d_model,
+                dropout_rate=dropout_rate, **reg,
+                pre_layernorm=pre_layernorm, rms_scaling=rms_scaling
+            )
+        else:
+            self.ffn = FeedForward(
+                d_model=d_model,
+                dff=dff,
+                activation=activation,
+                dropout_rate=dropout_rate, **reg,
+                pre_layernorm=pre_layernorm, rms_scaling=rms_scaling
+            )
 
     def call(self, x, attention_mask=None):  # x: (v, b, t, e) attn_mask: (v, b, t)
         x = tf.transpose(x, perm=[1, 0, 2, 3])  # x: (b, v, t, e)

@@ -1,16 +1,22 @@
 import numpy as np
 import tensorflow as tf
 
-from ists_.model.encoder import FeedForward
 
-
-def get_rotary_matrix(max_len, d_model):
+'''def get_rotary_matrix(max_len, d_model, max_freq=10000.0):
     """Generates the RoPE frequency embedding."""
     pos = tf.range(max_len, dtype=tf.float32)
-    inv_freq = 1.0 / (10000 ** (tf.range(0, d_model, 2, dtype=tf.float32) / d_model))
+    inv_freq = 1.0 / (max_freq ** (tf.range(0, d_model, 2, dtype=tf.float32) / d_model))
     freqs = tf.einsum('i,j->ij', pos, inv_freq)
     emb = tf.concat((freqs, freqs), axis=-1)
-    return emb[tf.newaxis, tf.newaxis, :, :]
+    return emb[tf.newaxis, tf.newaxis, :, :]'''
+
+def get_rotary_matrix(max_len, d_model, max_freq=10000.0):
+    """Generates the RoPE frequency embedding."""
+    pos = np.arange(max_len, dtype=float)
+    inv_freq = 1.0 / (max_freq ** (np.arange(0, d_model, 2) / d_model))
+    freqs = np.einsum('i,j->ij', pos, inv_freq)
+    emb = np.concatenate((freqs, freqs), axis=-1)
+    return emb[np.newaxis, np.newaxis, :, :]
 
 
 def rotate_half(x):
@@ -21,10 +27,11 @@ def rotate_half(x):
 
 def apply_rotary_pos_emb(x, freqs):
     """Applies the Rotary Positional Embedding."""
-    seq_len = tf.shape(x)[2]
+    '''seq_len = tf.shape(x)[2]
     freqs = freqs[:, :, :seq_len, :]
     cos = tf.cos(freqs)
-    sin = tf.sin(freqs)
+    sin = tf.sin(freqs)'''
+    cos, sin = tf.cos(tf.cast(freqs, tf.float32)), tf.sin(tf.cast(freqs, tf.float32))
     return (x * cos) + (rotate_half(x) * sin)
 
 
@@ -48,10 +55,11 @@ class RoPEMultiHeadAttention(tf.keras.layers.Layer):
     Custom MultiHeadAttention with RoPE, Dropout, and Kernel Regularization.
     """
 
-    def __init__(self, d_model, num_heads, dropout_rate=0.0, kernel_regularizer=None, **kwargs):
+    def __init__(self, d_model, num_heads, dropout_rate=0.0, kernel_regularizer=None, max_freq=10000.0, **kwargs):
         super().__init__(**kwargs)
         self.num_heads = num_heads
         self.d_model = d_model
+        self.max_freq = max_freq
 
         assert d_model % self.num_heads == 0, "d_model must be divisible by num_heads"
         self.depth = d_model // self.num_heads
@@ -65,7 +73,11 @@ class RoPEMultiHeadAttention(tf.keras.layers.Layer):
         # Dropout layer for attention weights
         self.dropout = tf.keras.layers.Dropout(dropout_rate)
 
-        self.freqs = get_rotary_matrix(max_len=2048, d_model=self.depth)
+        # self.freqs = get_rotary_matrix(max_len=2048, d_model=self.depth, max_freq=self.max_freq)
+
+    def build(self, input_shape):
+        _, seq_len, _ = input_shape
+        self.freqs = get_rotary_matrix(max_len=seq_len, d_model=self.depth, max_freq=self.max_freq)
 
     def split_heads(self, x, batch_size):
         x = tf.reshape(x, (batch_size, -1, self.num_heads, self.depth))
@@ -92,7 +104,8 @@ class RoPEMultiHeadAttention(tf.keras.layers.Layer):
         scaled_attention_logits = matmul_qk / tf.math.sqrt(dk)
 
         if mask is not None:
-            mask = mask[:, tf.newaxis, tf.newaxis, :]
+            # mask = mask[:, tf.newaxis, tf.newaxis, :]
+            mask = mask[:, tf.newaxis, :]
             scaled_attention_logits += (mask * -1e9)
 
         attention_weights = tf.nn.softmax(scaled_attention_logits, axis=-1)
@@ -108,16 +121,19 @@ class RoPEMultiHeadAttention(tf.keras.layers.Layer):
 
 
 class GlobalSelfAttention(tf.keras.layers.Layer):
-    def __init__(self, num_heads, key_dim, dropout=0.1, kernel_regularizer=None, **kwargs):
-        super().__init__()
-        self.pre_layernorm = kwargs.get('pre_layernorm', False)
-        self.rms_scaling = kwargs.get('rms_scaling', False)
+    def __init__(self, num_heads, key_dim, dropout=0.1, kernel_regularizer=None, pre_layernorm=False, rms_scaling=False,
+                 max_freq=10000.0, **kwargs):
+        super().__init__(**kwargs)
+        self.pre_layernorm = pre_layernorm
+        self.rms_scaling = rms_scaling
+        self.max_freq = max_freq
 
         self.mha = RoPEMultiHeadAttention(
             d_model=key_dim,
             num_heads=num_heads,
             dropout_rate=dropout,
-            kernel_regularizer=kernel_regularizer
+            kernel_regularizer=kernel_regularizer,
+            max_freq=self.max_freq,
         )
         self.layernorm = tf.keras.layers.LayerNormalization(rms_scaling=self.rms_scaling)
         self.dropout = tf.keras.layers.Dropout(dropout)
@@ -133,10 +149,11 @@ class GlobalSelfAttention(tf.keras.layers.Layer):
 
 
 class FeedForward(tf.keras.layers.Layer):
-    def __init__(self, d_model, dff, activation='relu', dropout_rate=0.1, kernel_regularizer=None, **kwargs):
-        super().__init__()
-        self.pre_layernorm = kwargs.get('pre_layernorm', False)
-        self.rms_scaling = kwargs.get('rms_scaling', False)
+    def __init__(self, d_model, dff, activation='relu', dropout_rate=0.1, kernel_regularizer=None, pre_layernorm=False,
+                 rms_scaling=False, **kwargs):
+        super().__init__(**kwargs)
+        self.pre_layernorm = pre_layernorm
+        self.rms_scaling = rms_scaling
 
         self.seq = tf.keras.Sequential([
             tf.keras.layers.Dense(dff, activation=activation, kernel_regularizer=kernel_regularizer),
@@ -155,10 +172,12 @@ class FeedForward(tf.keras.layers.Layer):
 
 
 class EncoderLayer(tf.keras.layers.Layer):
-    def __init__(self, *, d_model, num_heads, dff, dropout_rate=0.1, kernel_regularizer=None, **kwargs):
-        super().__init__()
-        self.pre_layernorm = kwargs.get('pre_layernorm', False)
-        self.rms_scaling = kwargs.get('rms_scaling', False)
+    def __init__(self, *, d_model, num_heads, dff, dropout_rate=0.1, kernel_regularizer=None, pre_layernorm=False,
+                 rms_scaling=False, max_freq=10000.0, **kwargs):
+        super().__init__(**kwargs)
+        self.pre_layernorm = pre_layernorm
+        self.rms_scaling = rms_scaling
+        self.max_freq = max_freq
 
         self.self_attention = GlobalSelfAttention(
             num_heads=num_heads,
@@ -166,11 +185,15 @@ class EncoderLayer(tf.keras.layers.Layer):
             dropout=dropout_rate,
             kernel_regularizer=kernel_regularizer,
             pre_layernorm=self.pre_layernorm,
-            rms_scaling=self.rms_scaling
+            rms_scaling=self.rms_scaling,
+            max_freq=self.max_freq,
+            **kwargs
         )
 
-        self.ffn = FeedForward(d_model, dff, dropout_rate=dropout_rate, kernel_regularizer=kernel_regularizer,
-                               pre_layernorm=self.pre_layernorm, rms_scaling=self.rms_scaling)
+        self.ffn = FeedForward(
+            d_model, dff, dropout_rate=dropout_rate, kernel_regularizer=kernel_regularizer,
+            pre_layernorm=self.pre_layernorm, rms_scaling=self.rms_scaling, **kwargs,
+        )
 
     def call(self, x, mask=None):
         x = self.self_attention(x, mask=mask)
@@ -179,11 +202,9 @@ class EncoderLayer(tf.keras.layers.Layer):
 
 
 class Encoder(tf.keras.layers.Layer):
-    def __init__(self, *, num_layers, d_model, num_heads,
-                 dff, vocab_size, dropout_rate=0.1, kernel_regularizer=None, **kwargs):
-        super().__init__()
-        self.pre_layernorm = kwargs.get('pre_layernorm', False)
-        self.rms_scaling = kwargs.get('rms_scaling', False)
+    def __init__(self, *, num_layers, d_model, num_heads, dff, vocab_size, dropout_rate=0.1, kernel_regularizer=None,
+                 pre_layernorm=False, rms_scaling=False, max_freq=10000.0, **kwargs):
+        super().__init__(**kwargs)
 
         self.d_model = d_model
         self.num_layers = num_layers
@@ -191,15 +212,17 @@ class Encoder(tf.keras.layers.Layer):
         self.pos_embedding = TokenEmbedding(
             vocab_size=vocab_size, d_model=d_model)
 
-        self.enc_layers = [
-            EncoderLayer(d_model=d_model,
-                         num_heads=num_heads,
-                         dff=dff,
-                         dropout_rate=dropout_rate,
-                         kernel_regularizer=kernel_regularizer,
-                         pre_layernorm=self.pre_layernorm,
-                         rms_scaling=self.rms_scaling)
-            for _ in range(num_layers)]
+        self.enc_layers = [EncoderLayer(
+            d_model=d_model,
+            num_heads=num_heads,
+            dff=dff,
+            dropout_rate=dropout_rate,
+            kernel_regularizer=kernel_regularizer,
+            pre_layernorm=pre_layernorm,
+            rms_scaling=rms_scaling,
+            max_freq=max_freq,
+            **kwargs,
+        ) for _ in range(num_layers)]
         self.dropout = tf.keras.layers.Dropout(dropout_rate)
 
     def call(self, x):

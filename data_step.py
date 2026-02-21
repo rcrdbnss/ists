@@ -40,7 +40,7 @@ def parse_params():
     parser.add_argument("--num-layers", type=int, default=None)
     parser.add_argument("-sw", "--shared-weights", action='store_true', help="Use shared weights")
     parser.add_argument("-pt", "--pretrain", action='store_true', help="Run pretraining task")
-    parser.add_argument("--pooling", choices=['mean', 'attn'], default='attn', help="Pooling type")
+    parser.add_argument("--pooling", choices=['mean', 'last', 'attn', 'attn_pos_bias'], default='attn', help="Pooling type")
 
     parser.add_argument("--lr", type=float, default=None, help="Learning rate")
     # parser.add_argument("--warmup-steps", type=int, default=None, help="Warmup steps for custom scheduler")

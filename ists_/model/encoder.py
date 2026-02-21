@@ -2,20 +2,25 @@ import tensorflow as tf
 
 
 class BaseAttention(tf.keras.layers.Layer):
-    def __init__(self, **kwargs):
+    def __init__(self, rms_scaling=False, **kwargs):
         super().__init__()
         self.mha = tf.keras.layers.MultiHeadAttention(**kwargs)
-        self.layernorm = tf.keras.layers.LayerNormalization() #rms_scaling=True)
+        self.layernorm = tf.keras.layers.LayerNormalization(rms_scaling=rms_scaling)
         self.add = tf.keras.layers.Add()
 
 
 class CrossAttention(BaseAttention):
     last_attn_scores = None
 
+    def __init__(self, pre_layernorm=False, rms_scaling=False, **kwargs):
+        super().__init__(rms_scaling=rms_scaling, **kwargs)
+        self.pre_layernorm = pre_layernorm
+
     def call(self, x, context, attention_mask=None):
-        y = 1/0  # raise error
+        y = x
+        if self.pre_layernorm: y = self.layernorm(y)
         attn_output, attn_scores = self.mha(
-            query=x,
+            query=y,
             key=context,
             value=context,
             return_attention_scores=True,
@@ -26,7 +31,7 @@ class CrossAttention(BaseAttention):
         self.last_attn_scores = attn_scores
 
         x = self.add([x, attn_output])
-        x = self.layernorm(x)
+        if not self.pre_layernorm: x = self.layernorm(x)
 
         return x
 
@@ -34,9 +39,13 @@ class CrossAttention(BaseAttention):
 class GlobalSelfAttention(BaseAttention):
     last_attn_scores = None
 
+    def __init__(self, pre_layernorm=False, rms_scaling=False, **kwargs):
+        super().__init__(rms_scaling=rms_scaling, **kwargs)
+        self.pre_layernorm = pre_layernorm
+
     def call(self, x, attention_mask=None):
         y = x
-        # y = self.layernorm(y)
+        if self.pre_layernorm: y = self.layernorm(y)
         attn_output, attn_scores = self.mha(
             query=y,
             key=y,
@@ -49,13 +58,14 @@ class GlobalSelfAttention(BaseAttention):
         self.last_attn_scores = attn_scores
 
         x = self.add([x, attn_output])
-        x = self.layernorm(x)
+        if not self.pre_layernorm: x = self.layernorm(x)
 
         return x
 
 
 class FeedForward(tf.keras.layers.Layer):
-    def __init__(self, d_model, dff, activation='relu', dropout_rate=0.1, kernel_regularizer=None):
+    def __init__(self, d_model, dff, activation='relu', dropout_rate=0.1, kernel_regularizer=None,
+                 pre_layernorm=False, rms_scaling=False):
         super().__init__()
 
         self.seq = tf.keras.Sequential([
@@ -64,18 +74,20 @@ class FeedForward(tf.keras.layers.Layer):
             tf.keras.layers.Dropout(dropout_rate)
         ])
         self.add = tf.keras.layers.Add()
-        self.layer_norm = tf.keras.layers.LayerNormalization() #rms_scaling=True)
+        self.layer_norm = tf.keras.layers.LayerNormalization(rms_scaling=rms_scaling)
+        self.pre_layernorm = pre_layernorm
 
     def call(self, x, **kwargs):
         y = x
-        # y = self.layer_norm(y)
+        if self.pre_layernorm: y = self.layer_norm(y)
         x = self.add([x, self.seq(y)])
-        x = self.layer_norm(x)
+        if not self.pre_layernorm: x = self.layer_norm(x)
         return x
 
 
 class EncoderLayer(tf.keras.layers.Layer):
-    def __init__(self, *, d_model, num_heads, dff, activation='relu', dropout_rate=0.1, l2_reg=None):
+    def __init__(self, *, d_model, num_heads, dff, activation='relu', dropout_rate=0.1, l2_reg=None,
+                 pre_layernorm=False, rms_scaling=False, **kwargs):
         super().__init__()
 
         reg = {}
@@ -84,17 +96,18 @@ class EncoderLayer(tf.keras.layers.Layer):
 
         self.self_attention = GlobalSelfAttention(
             num_heads=num_heads,
-            # key_dim=d_model,
             key_dim=d_model // num_heads,
             dropout=dropout_rate,
-            **reg
+            **reg,
+            pre_layernorm=pre_layernorm, rms_scaling=rms_scaling
         )
 
         self.ffn = FeedForward(
             d_model=d_model,
             dff=dff,
             activation=activation,
-            dropout_rate=dropout_rate, **reg
+            dropout_rate=dropout_rate, **reg,
+            pre_layernorm=pre_layernorm, rms_scaling=rms_scaling
         )
         self.last_attn_scores = None
 
@@ -106,47 +119,10 @@ class EncoderLayer(tf.keras.layers.Layer):
         return x
 
 
-"""class CrossEncoderLayer(tf.keras.layers.Layer):
-
-    def __init__(self, *, d_model, num_heads, dff, activation='relu', dropout_rate=0.1, l2_reg=None):
-        super(CrossEncoderLayer, self).__init__()
-
-        reg = {}
-        if l2_reg:
-            reg['kernel_regularizer'] = tf.keras.regularizers.l2(l2_reg)
-
-        self.self_attention = GlobalSelfAttention(
-            num_heads=num_heads,
-            key_dim=d_model,
-            dropout=dropout_rate,
-            **reg
-        )
-
-        self.cross_attention = CrossAttention(
-            num_heads=num_heads,
-            key_dim=d_model,
-            dropout=dropout_rate,
-            **reg
-        )
-
-        self.ffn = FeedForward(d_model, dff, activation=activation,
-                               dropout_rate=dropout_rate, **reg)
-        self.last_attn_scores = None
-
-    def call(self, x, context):
-        x = self.self_attention(x=x)
-        x = self.cross_attention(x=x, context=context)
-
-        # Cache the last attention scores for plotting later
-        self.last_attn_scores = self.cross_attention.last_attn_scores
-
-        x = self.ffn(x)  # Shape `(batch_size, seq_len, d_model)`.
-        return x"""
-
-
 class MVEncoderLayer(tf.keras.layers.Layer):
 
-    def __init__(self, *, d_model, num_heads, dff, activation='relu', dropout_rate=0.1, l2_reg=None):
+    def __init__(self, *, d_model, num_heads, dff, activation='relu', dropout_rate=0.1, l2_reg=None,
+                 pre_layernorm=False, rms_scaling=False):
         super().__init__()
 
         self.encoder = EncoderLayer(
@@ -155,7 +131,8 @@ class MVEncoderLayer(tf.keras.layers.Layer):
             dff=dff,
             activation=activation,
             dropout_rate=dropout_rate,
-            l2_reg=l2_reg
+            l2_reg=l2_reg,
+            pre_layernorm=pre_layernorm, rms_scaling=rms_scaling
         )
 
     def call(self, x, attn_mask=None):  # x: (v, b, t, e) attn_mask: (v, b, t)
