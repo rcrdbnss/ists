@@ -51,13 +51,13 @@ class AttentivePooling(tf.keras.layers.Layer):
         self.scale = 1 / np.sqrt(d_model)
 
         # The query vector (kernel)
-        self.scorer = tf.keras.layers.Dense(units=1, activation=None, name="attention_scorer", use_bias=False)
+        self.scorer = self.add_weight(shape=(d_model, 1), name="attention_scorer")
         super(AttentivePooling, self).build(input_shape)
 
     def call(self, inputs, mask=None):
         # 1. Calculate raw dot products
         # Shape: (batch, seq_len, 1)
-        scores = self.scorer(inputs)
+        scores = tf.matmul(inputs, self.scorer)
 
         # 2. APPLY SCALING (Critical for wider models)
         scores = scores * self.scale
@@ -99,7 +99,7 @@ class AttentivePoolingWithPositionalBias(tf.keras.layers.Layer):
         self.scorer = tf.keras.layers.Dense(units=1, activation=None, name="attention_scorer", use_bias=False)
 
         # Positional embedding layer
-        self.pos_bias = self.add_weight(name="pos_bias", shape=(seq_len, 1))
+        self.pos_bias = self.add_weight(name="pos_bias", shape=(seq_len, 1), initializer='zeros')
 
         super(AttentivePoolingWithPositionalBias, self).build(input_shape)
 

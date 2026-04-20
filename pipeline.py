@@ -17,6 +17,7 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
     nn_params = model_params['nn_params']
     loss = model_params['loss']
     lr = model_params['lr']
+    pretr_lr, finet_lr = model_params.get('pretr_lr', 0.), model_params.get('finet_lr', 0.)
     epochs = model_params['epochs']
     patience = model_params['patience']
     batch_size = model_params['batch_size']
@@ -49,6 +50,7 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
         model_params=nn_params,
         loss=loss,
         lr=lr,
+        finet_lr=finet_lr,
         run_eagerly=train_test_dict['params']['path_params']['dev']
     )
 
@@ -65,13 +67,21 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
             x=train_test_dict['x_train'],
             spt=train_test_dict['spt_train'],
             exg=train_test_dict['exg_train'],
-            epochs=(epochs if train_test_dict['params']['path_params']['dev'] else 100),
+            x_aux=train_test_dict['x_aux_train'],
+            spt_aux=train_test_dict['spt_aux_train'],
+            exg_aux=train_test_dict['exg_aux_train'],
+            tt=train_test_dict['tt_train'],
+            epochs=epochs,
             batch_size=batch_size,
             verbose=1,
             val_x=train_test_dict['x_valid'],
             val_spt=train_test_dict['spt_valid'],
             val_exg=train_test_dict['exg_valid'],
             val_y=train_test_dict['y_valid'],
+            val_x_aux=train_test_dict['x_aux_valid'],
+            val_spt_aux=train_test_dict['spt_aux_valid'],
+            val_exg_aux=train_test_dict['exg_aux_valid'],
+            val_tt=train_test_dict['tt_valid'],
             **static_args,
             early_stop_patience=patience,
         )
@@ -93,6 +103,10 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
                 x=train_test_dict['x_test'],
                 spt=train_test_dict['spt_test'],
                 exg=train_test_dict['exg_test'],
+                x_aux=train_test_dict['x_aux_test'],
+                spt_aux=train_test_dict['spt_aux_test'],
+                exg_aux=train_test_dict['exg_aux_test'],
+                tt=train_test_dict['tt_test'],
                 exg_static=train_test_dict.get('exg_static_test', None), spt_static=train_test_dict.get('spt_static_test', None),
             )
 
@@ -127,6 +141,7 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
         x=train_test_dict['x_train'],
         spt=train_test_dict['spt_train'],
         exg=train_test_dict['exg_train'],
+        tt=train_test_dict['tt_train'],
         y=train_test_dict['y_train'],
         epochs=epochs,
         batch_size=batch_size,
@@ -135,6 +150,7 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
         val_spt=train_test_dict['spt_valid'],
         val_exg=train_test_dict['exg_valid'],
         val_y=train_test_dict['y_valid'],
+        val_tt=train_test_dict['tt_valid'],
         **static_args,
         early_stop_patience=patience,
     )
@@ -146,6 +162,7 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
         x=train_test_dict['x_valid'],
         spt=train_test_dict['spt_valid'],
         exg=train_test_dict['exg_valid'],
+        tt=train_test_dict['tt_valid'],
         exg_static=train_test_dict.get('exg_static_valid', None), spt_static=train_test_dict.get('spt_static_valid', None),
     )
     id_array = train_test_dict['id_valid']
@@ -161,6 +178,7 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
         x=train_test_dict['x_test'],
         spt=train_test_dict['spt_test'],
         exg=train_test_dict['exg_test'],
+        tt=train_test_dict['tt_test'],
         exg_static=train_test_dict.get('exg_static_test', None), spt_static=train_test_dict.get('spt_static_test', None),
     )
     id_array = train_test_dict['id_test']
@@ -179,10 +197,9 @@ def model_step(train_test_dict: dict, model_params: dict, checkpoint_dir: str) -
     curves['val_loss'] = model.history.history['val_loss']
     curves['mse'] = model.history.history['mse']
     curves['val_mse'] = model.history.history['val_mse']
-    curves.update({
-        'mse_avg': model.history.history['mse_avg'] if 'mse_avg' in model.history.history else [],
-        'val_mse_avg': model.history.history['val_mse_avg'] if 'val_mse_avg' in model.history.history else [],
-    })
+    curves['mse_avg'] = model.history.history['mse_avg'] if 'mse_avg' in model.history.history else []
+    curves['val_mse_avg'] = model.history.history['val_mse_avg'] if 'val_mse_avg' in model.history.history else []
+
     epoch_times = model.epoch_times
     if isinstance(epoch_times, dict):
         epoch_times = {f'epoch_times_{k}': v for k, v in epoch_times.items()}

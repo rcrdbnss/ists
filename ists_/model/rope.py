@@ -1,6 +1,7 @@
 import numpy as np
 import tensorflow as tf
 
+from ists_.model.encoder import FeedForward
 
 '''def get_rotary_matrix(max_len, d_model, max_freq=10000.0):
     """Generates the RoPE frequency embedding."""
@@ -135,7 +136,7 @@ class GlobalSelfAttention(tf.keras.layers.Layer):
             kernel_regularizer=kernel_regularizer,
             max_freq=self.max_freq,
         )
-        self.layernorm = tf.keras.layers.LayerNormalization(rms_scaling=self.rms_scaling)
+        self.layernorm = tf.keras.layers.RMSNormalization() if self.rms_scaling else tf.keras.layers.LayerNormalization()
         self.dropout = tf.keras.layers.Dropout(dropout)
         self.add = tf.keras.layers.Add()
 

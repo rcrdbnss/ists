@@ -3,7 +3,20 @@ import tensorflow as tf
 
 from ists_.model.embedding import TemporalEmbedding
 from ists_.model.encoder import GlobalSelfAttention, FeedForward, MVEncoderLayer
-from ists_.model.model_rope import SwiGLUFFN
+
+
+def get_optimal_swiglu_dff(d_model):
+    # 1. Target SwiGLU ratio (approx 2.66x)
+    hidden_dim = 4 * d_model
+    hidden_dim = int(2 * hidden_dim / 3)
+    
+    # 2. Force alignment to 32 (GPUs sweet spot for small dims)
+    multiple_of = 32
+    
+    # 3. Round up
+    dff = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
+    
+    return dff
 
 
 class STTransformerSequentialAttnMask(tf.keras.Model):
@@ -346,20 +359,13 @@ class EncoderLocalGlobalAttnMaskLayer(tf.keras.layers.Layer):
             pre_layernorm=pre_layernorm, rms_scaling=rms_scaling
         )
 
-        if activation == 'swiglu':
-            self.ffn = SwiGLUFFN(
-                d_model=d_model,
-                dropout_rate=dropout_rate, **reg,
-                pre_layernorm=pre_layernorm, rms_scaling=rms_scaling
-            )
-        else:
-            self.ffn = FeedForward(
-                d_model=d_model,
-                dff=dff,
-                activation=activation,
-                dropout_rate=dropout_rate, **reg,
-                pre_layernorm=pre_layernorm, rms_scaling=rms_scaling
-            )
+        self.ffn = FeedForward(
+            d_model=d_model,
+            dff=dff,
+            activation=activation,
+            dropout_rate=dropout_rate, **reg,  # dropout before residual connection
+            pre_layernorm=pre_layernorm, rms_scaling=rms_scaling
+        )
 
     def call(self, x, attention_mask=None):  # x: (v, b, t, e) attn_mask: (v, b, t)
         x = tf.transpose(x, perm=[1, 0, 2, 3])  # x: (b, v, t, e)

@@ -1,11 +1,17 @@
 import tensorflow as tf
 
+from ists_.model.utils import SwiGLUDense
+
 
 class BaseAttention(tf.keras.layers.Layer):
-    def __init__(self, rms_scaling=False, **kwargs):
+    def __init__(self, rms_scaling=False, dropout=0.0, **kwargs):
         super().__init__()
-        self.mha = tf.keras.layers.MultiHeadAttention(**kwargs)
-        self.layernorm = tf.keras.layers.LayerNormalization(rms_scaling=rms_scaling)
+        self.mha = tf.keras.layers.MultiHeadAttention(
+            # dropout=dropout,  # dropout on attention scores
+            **kwargs
+        )
+        self.dro = tf.keras.layers.Dropout(dropout)  # dropout on attention output
+        self.layernorm = tf.keras.layers.RMSNormalization() if rms_scaling else tf.keras.layers.LayerNormalization()
         self.add = tf.keras.layers.Add()
 
 
@@ -29,7 +35,7 @@ class CrossAttention(BaseAttention):
 
         # Cache the attention scores for plotting later.
         self.last_attn_scores = attn_scores
-
+        attn_output = self.dro(attn_output)
         x = self.add([x, attn_output])
         if not self.pre_layernorm: x = self.layernorm(x)
 
@@ -56,7 +62,7 @@ class GlobalSelfAttention(BaseAttention):
 
         # Cache the attention scores for plotting later.
         self.last_attn_scores = attn_scores
-
+        attn_output = self.dro(attn_output)
         x = self.add([x, attn_output])
         if not self.pre_layernorm: x = self.layernorm(x)
 
@@ -64,18 +70,29 @@ class GlobalSelfAttention(BaseAttention):
 
 
 class FeedForward(tf.keras.layers.Layer):
-    def __init__(self, d_model, dff, activation='relu', dropout_rate=0.1, kernel_regularizer=None,
-                 pre_layernorm=False, rms_scaling=False):
-        super().__init__()
+    def __init__(self, d_model, dff, activation='relu', dropout_rate=0.1, kernel_regularizer=None, pre_layernorm=False,
+                 rms_scaling=False, **kwargs):
+        super().__init__(**kwargs)
+        self.d_model = d_model
+        self.dff = dff
+        self.activation = activation
+        self.dropout_rate = dropout_rate
+        self.kernel_regularizer = kernel_regularizer
+        self.pre_layernorm = pre_layernorm
+        self.rms_scaling = rms_scaling
 
-        self.seq = tf.keras.Sequential([
-            tf.keras.layers.Dense(dff, activation=activation, kernel_regularizer=kernel_regularizer),
+        if self.activation == 'swiglu':
+            seq = [SwiGLUDense(dff, d_model, kernel_regularizer)]
+        else:
+            seq = [tf.keras.layers.Dense(dff, activation=activation, kernel_regularizer=kernel_regularizer)]
+        seq.extend([
             tf.keras.layers.Dense(d_model, kernel_regularizer=kernel_regularizer),
             tf.keras.layers.Dropout(dropout_rate)
         ])
+        self.seq = tf.keras.Sequential(seq)
+
         self.add = tf.keras.layers.Add()
-        self.layer_norm = tf.keras.layers.LayerNormalization(rms_scaling=rms_scaling)
-        self.pre_layernorm = pre_layernorm
+        self.layer_norm = tf.keras.layers.RMSNormalization() if rms_scaling else tf.keras.layers.LayerNormalization()
 
     def call(self, x, **kwargs):
         y = x

@@ -1,4 +1,3 @@
-from datetime import datetime
 import json
 import os
 import pickle
@@ -10,8 +9,8 @@ import pandas as pd
 import tensorflow as tf
 
 from data_step import parse_params, data_step, get_conf_name
+from ists_.model.model import get_optimal_swiglu_dff
 from ists_.preprocessing import TIME_N_VALUES
-from ists_.model.model_rope import get_optimal_dff
 
 
 def no_ablation(train_test_dict) -> dict:
@@ -344,108 +343,7 @@ def apply_ablation_code(abl_code: str, D):
 from pipeline import model_step
 
 
-"""def get_suffix(train_test_dict):
-    defaults = {
-        'num_layers': 1,
-        'l2_reg': 0.01,
-        'dropout_rate': 0.2,
-        'time_feats': {
-            'french': ('D',),
-            'ushcn': ('WY',),
-            'adbpo': ('M', 'WY'),
-        },
-        'epochs': 100,
-        'patience': 20,
-        'lr': {
-            'french': 0.0004, 'ushcn': 0.0004, 'adbpo': 0.0004,
-        },
-        'tf': '2.17.0',
-        'd_model': {
-            'french': 64, 'ushcn': 64, 'adbpo': 32
-        },
-        'num_heads': {
-            'french': 4, 'ushcn': 4, 'adbpo': 2
-        },
-        'dff': {
-            'french': 128, 'ushcn': 128, 'adbpo': 64,
-        },
-        'gru': {
-            'french': 256, 'ushcn': 256, 'adbpo': 128
-        },
-        'fff': {
-            'french': [256], 'ushcn': [256], 'adbpo': [128]
-        },
-    }
-
-    dataset = train_test_dict['params']['path_params']['type']
-
-    suffix = []
-
-    num_layers = train_test_dict['params']['model_params']['nn_params']['num_layers']
-    if num_layers != defaults['num_layers']:
-        suffix.append(f'encs={num_layers}')
-
-    d_model = train_test_dict['params']['model_params']['nn_params']['d_model']
-    if d_model != defaults['d_model'][dataset]:
-        suffix.append(f'd{d_model}')
-    num_heads = train_test_dict['params']['model_params']['nn_params']['num_heads']
-    if num_heads != defaults['num_heads'][dataset]:
-        suffix.append(f'h{num_heads}')
-    dff = train_test_dict['params']['model_params']['nn_params']['dff']
-    if dff != defaults['dff'][dataset]:
-        suffix.append(f'dff{dff}')
-    gru = train_test_dict['params']['model_params']['nn_params']['gru']
-    if gru != defaults['gru'][dataset]:
-        suffix.append(f'gru{gru}')
-    fff = train_test_dict['params']['model_params']['nn_params']['fff']
-    if fff != defaults['fff'][dataset]:
-        suffix.append(f'fff{"+".join([str(x) for x in fff])}')
-
-    l2_reg = train_test_dict['params']['model_params']['nn_params']['l2_reg']
-    if l2_reg != defaults['l2_reg']:
-        l2_reg = str(l2_reg).replace('0.', '')
-        suffix.append(f'reg{l2_reg}')
-
-    dropout_rate = train_test_dict['params']['model_params']['nn_params']['dropout_rate']
-    if dropout_rate != defaults['dropout_rate']:
-        dropout_rate = str(dropout_rate).replace('0.', '')
-        suffix.append(f'dro{dropout_rate}')
-
-    epochs = train_test_dict['params']['model_params']['epochs']
-    if epochs != defaults['epochs']:
-        suffix.append(f'e{epochs}')
-
-    patience = train_test_dict['params']['model_params']['patience']
-    if patience != defaults['patience']:
-        suffix.append(f'pat{patience}')
-
-    lr = train_test_dict['params']['model_params']['lr']
-    if lr != defaults['lr'][dataset]:
-        if lr == 0:
-            suffix.append('lr0')
-        else:
-            suffix.append(f'lr{lr:.0e}')
-
-    time_feats = train_test_dict['params']['prep_params']['feat_params']['time_feats']
-    if time_feats:
-        time_feats = tuple(sorted(time_feats))
-        if time_feats != tuple(sorted(defaults['time_feats'][dataset])):
-            suffix.append('+'.join(time_feats))
-
-    if tf.__version__ != defaults['tf']:
-        suffix.append(f'tf{tf.__version__.replace(".", "")}')
-
-    if train_test_dict["params"]["model_params"]["nn_params"]["is_null_embedding"]:
-        suffix.append("Nemb")
-
-    return '_'.join(suffix)"""
-
-
 def get_suffix(train_test_dict):
-    def to_scientific_notation(number):
-        mantissa, exponent = f"{number:.0e}".split("e")
-        return float(mantissa), int(exponent)
-
     suffix = []
 
     num_layers = train_test_dict['params']['model_params']['nn_params']['num_layers']
@@ -458,7 +356,7 @@ def get_suffix(train_test_dict):
     suffix.append(f'dff{dff}')
 
     dropout_rate = train_test_dict['params']['model_params']['nn_params']['dropout_rate']
-    suffix.append(f'dro{int(dropout_rate * 10)}')
+    suffix.append(f'dro{str(dropout_rate)[2:]}')
 
     l2_reg = train_test_dict['params']['model_params']['nn_params']['l2_reg']
     m, e = to_scientific_notation(l2_reg)
@@ -480,6 +378,11 @@ def get_suffix(train_test_dict):
     return '_'.join(suffix)
 
 
+def to_scientific_notation(number):
+    mantissa, exponent = f"{number:.0e}".split("e")
+    return float(mantissa), int(exponent)
+
+
 def null_indicator_to_mask(train_test_dict):
     null_id = np.where(np.array(train_test_dict['x_feat_mask']) == 1)[0]
     if len(null_id) == 0:
@@ -492,52 +395,6 @@ def null_indicator_to_mask(train_test_dict):
         for X in train_test_dict[f'exg_{n}']:
             X[:, :, null_id] = 1 - X[:, :, null_id]
     return train_test_dict
-
-
-"""def sample_aux_mask(train_test_dict, rate=0.1):
-
-    def _sample_aux_mask(mask):
-        num_to_mask = max(1, round(len(mask) * rate))
-
-        real_indices = np.where(mask == 1)[0]
-        if len(real_indices) < num_to_mask:
-            # Not enough real values to mask the required number
-            selected = real_indices  # Mask all that are available
-        else:
-            selected = np.random.choice(real_indices, size=num_to_mask, replace=False)
-
-        aux_mask = np.zeros_like(mask)
-        aux_mask[selected] = 1
-        return aux_mask
-
-    def _apply_sample_aux_mask(X):
-        mask = X[:, :, null_id]
-        aux_mask = []
-        for b in range(mask.shape[0]):
-            aux_mask.append(_sample_aux_mask(mask[b]))
-        aux_mask = np.array(aux_mask)[:, :, np.newaxis]
-        X = np.concatenate([X, aux_mask], axis=2)
-        return X
-
-    null_id = np.where(np.array(train_test_dict['x_feat_mask']) == 1)[0]
-    if len(null_id) == 0:
-        return train_test_dict
-    null_id = null_id[0]  # Assuming only one null feature for simplicity
-    for split in ['train', 'test', 'valid']:
-        X = train_test_dict[f'x_{split}']
-        X = _apply_sample_aux_mask(X)
-        train_test_dict[f'x_{split}'] = X
-
-        for i in range(len(train_test_dict[f'spt_{split}'])):
-            X = train_test_dict[f'spt_{split}'][i]
-            X = _apply_sample_aux_mask(X)
-            train_test_dict[f'spt_{split}'][i] = X
-
-        for i in range(len(train_test_dict[f'exg_{split}'])):
-            X = train_test_dict[f'exg_{split}'][i]
-            X = _apply_sample_aux_mask(X)
-            train_test_dict[f'exg_{split}'][i] = X
-    return train_test_dict"""
 
 
 def ablation(
@@ -570,6 +427,10 @@ def ablation(
         print('Loading from', pickle_file, '...', end='', flush=True)
         with open(pickle_file, "rb") as f:
             train_test_dict = pickle.load(f)
+        del train_test_dict['spt_train']
+        del train_test_dict['spt_valid']
+        del train_test_dict['spt_test']
+        train_test_dict['spt_train'], train_test_dict['spt_valid'], train_test_dict['spt_test'] = [], [], []
         print(' done!')
         train_test_dict['params'] = {
             'path_params': deepcopy(path_params),
@@ -621,28 +482,39 @@ def ablation(
         train_test_dict['params']['model_params']['nn_params']['activation'] = 'swiglu'
         d_model = train_test_dict['params']['model_params']['nn_params']['d_model']
         dff = train_test_dict['params']['model_params']['nn_params']['dff']
-        dff_swiglu = get_optimal_dff(d_model)
+        dff_swiglu = get_optimal_swiglu_dff(d_model)
         name = name.replace(f'dff{dff}', f'dff{dff_swiglu}')
+        train_test_dict['params']['model_params']['nn_params']['dff'] = dff_swiglu
 
         with open(pickle_file.replace(".pickle", "_aux.pickle"), "rb") as f:
             train_test_dict_aux = pickle.load(f)
+        del train_test_dict_aux['spt_train']
+        del train_test_dict_aux['spt_valid']
+        del train_test_dict_aux['spt_test']
+        train_test_dict_aux['spt_train'], train_test_dict_aux['spt_valid'], train_test_dict_aux['spt_test'] = [], [], []
         keep_ids = np.where(np.isin(train_test_dict['x_feat_mask'], [0, 1]))[0]
-        for n in ['train', 'test', 'valid']:
-            def _f(D, D_aux, key, i=None):
-                if i is not None:
-                    X = D[key][i]
-                    X_aux = D_aux[key][i][:, :, keep_ids]
-                    D[key][i] = np.concatenate([X, X_aux], axis=2)
-                    return D
-                X = D[key]
-                X_aux = D_aux[key][:, :, keep_ids]
-                D[key] = np.concatenate([X, X_aux], axis=2)
-                return D
-            train_test_dict = _f(train_test_dict, train_test_dict_aux, f'x_{n}')
-            for i in range(len(train_test_dict[f'spt_{n}'])):
-                train_test_dict = _f(train_test_dict, train_test_dict_aux, f'spt_{n}', i)
-            for i in range(len(train_test_dict[f'exg_{n}'])):
-                train_test_dict = _f(train_test_dict, train_test_dict_aux, f'exg_{n}', i)
+
+        for _set in ['train', 'valid', 'test']:
+            x_aux = train_test_dict_aux[f'x_{_set}']
+            x_aux = x_aux[..., keep_ids]
+            train_test_dict[f'x_aux_{_set}'] = x_aux
+            train_test_dict[f'spt_aux_{_set}'] = []
+            for i in range(len(train_test_dict[f'spt_{_set}'])):
+                x_aux = train_test_dict_aux[f'spt_{_set}'][i]
+                x_aux = x_aux[..., keep_ids]
+                train_test_dict[f'spt_aux_{_set}'].append(x_aux)
+            train_test_dict[f'exg_aux_{_set}'] = []
+            for i in range(len(train_test_dict[f'exg_{_set}'])):
+                x_aux = train_test_dict_aux[f'exg_{_set}'][i]
+                x_aux = x_aux[..., keep_ids]
+                train_test_dict[f'exg_aux_{_set}'].append(x_aux)
+
+        # finet_lr = train_test_dict['params']['model_params']['lr']
+        # finet_lr = 1e-4
+        finet_lr = 5e-5
+        train_test_dict['params']['model_params']['finet_lr'] = finet_lr
+        m, e = to_scientific_notation(finet_lr)
+        finet_lr = f'{int(m)}e{"+" if e > 0 else ""}{e}'
 
         # name += "+NoMask"
         # name += "+Mean"
@@ -677,7 +549,7 @@ def ablation(
         name += "+Loss0.3obs+0.1avg"  # loss weights
         # name += "_wu10e"
         name += "_Ft"
-        name += "+lr=1e-4"  # 1e-4
+        name += "+lr=" + finet_lr
         # name += "+Loss0.1avg"
         # name += "_FtNoEmb"  # Do not fine-tune the embedding layer
         # name += "_reg+"  # apply regularization to task-specific heads too
@@ -688,13 +560,23 @@ def ablation(
         name += "_b1000"  # sinusoidal embedding with base=100
         # name += "_PreLN"
         name += "_RMSnorm"
-        name += "_SwiGLU"
+        name += "_SwiGLU+bias01"
         # name += "_EmbScaleD"
         # name += "_TPEmbD"  # time features and position embedded together
         # name += "_TembPrd"  # time features embedded as periodic
         # name += "_P|T"
         # name += "LearnTEnc"
         name += "_Emb3"
+        # name += "_TEdec"  # trend-error decomposition in the embedder
+        # name += "+initHe"
+        name += "+SinScale1/4"
+        name += "_Keras3.9"  # updated rms implementation
+        name += "_AdamW"
+        name += "_MHAdroO" if train_test_dict['params']['model_params']['nn_params']['dropout_rate'] > 0 else ''  # Multi-Head Attention dropout on O (output) and/or A (attention scores)
+        # name += '_ConvNorm'
+        name += '_noRegTime'
+        # name += "_OutScale"
+        name += "+initHeadsLC"
 
         """train_test_dict['params']['model_params']['encoder_cls'] = "ParallelEncoder"
         name += '_P'"""
@@ -716,11 +598,14 @@ def ablation(
         # checkpoint_dir = checkpoint_basedir
         os.makedirs(checkpoint_dir, exist_ok=True)
 
-        # if dataset is "french", treat the last exogenous variable differently
+        # if dataset is "french", treat the "depth" variable differently
         if path_params['type'] == 'french':
-            # remove last exogenous variable from exogenous inputs
-            # for n in ['train', 'test', 'valid']:
-            #     train_test_dict[f'exg_{n}'] = train_test_dict[f'exg_{n}'][:-1]
+            """# remove "depth" (index 2 in exg) from exogenous inputs
+            ids_to_remove = [2]
+            for n in ['train', 'test', 'valid']:
+                exg = train_test_dict[f'exg_{n}']  # (v, b, t, f)
+                exg = [exg[s] for s in range(len(exg)) if s not in ids_to_remove]
+                train_test_dict[f'exg_{n}'] = exg"""
 
             # specify its index as static features
             train_test_dict["params"]["model_params"]["nn_params"]["static_feats_ids"] = [3]
@@ -733,7 +618,7 @@ def ablation(
                 exg = [exg[s] for s in range(len(exg)) if s not in static_ids]
                 train_test_dict[f'exg_{split}'] = exg
                 static = np.stack(static, axis=1)  # (B, num_static)
-                exg_static = static[:, np.newaxis, :]  # (B, 1, num_static)
+                exg_static = static  # (B, num_static)
                 spt_static = None  # fixme
                 train_test_dict[f'spt_static_{split}'] = spt_static
                 train_test_dict[f'exg_static_{split}'] = exg_static"""
@@ -749,17 +634,22 @@ def ablation(
 
         # non-grid results
         if os.path.exists(results_file):
-            results = pd.read_csv(results_file, index_col=0).to_dict(orient='index')
+            results = pd.read_csv(results_file, index_col=0)
+            if results.index.name is None:  # old format
+                results.index.name = "name"
+            results = results.reset_index()
+            results = results.to_dict(orient='records')
         else:
-            results = {}
+            results = []
         met["run_id"] = run_id
-        results[name] = met
+        met['name'] = name
+        results.append(met)
         # pd.DataFrame(results).T.to_csv(results_file, index=True)
         columns = (
-            "run_id,test_r2,test_mae,test_mse,test_wMAPE,val_r2,val_mae,val_mse,val_wMAPE,"
+            "run_id,name,test_r2,test_mae,test_mse,test_wMAPE,val_r2,val_mae,val_mse,val_wMAPE,"
             "pretr_test_mae,pretr_test_mse,pretr_test_wMAPE"
         ).split(',')
-        pd.DataFrame.from_dict(results, orient='index')[columns].to_csv(results_file, index=True)
+        pd.DataFrame(results)[columns].set_index("run_id").to_csv(results_file, index=True)
 
         curves_path = results_file.replace('.csv', '')
         os.makedirs(curves_path, exist_ok=True)

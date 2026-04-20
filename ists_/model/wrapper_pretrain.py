@@ -106,19 +106,12 @@ def get_spatial_array(x: np.ndarray, spt: List[np.ndarray]) -> List[np.ndarray]:
     return spt_x
 
 
-def data_reshuffle(x, spt, exg, mask_id, x_aux_id, mask_aux_id, time_ids=None):
+def data_reshuffle(x, spt, exg, mask_id):
     spt, exg = get_spatial_array(x, spt), get_spatial_array(x, exg)  # (V, B, T, F)
     spt, exg = np.stack(spt, axis=1), np.stack(exg, axis=1)  # (B, V, T, F)
     spt_mask, exg_mask = spt[:, :, :, mask_id], exg[:, :, :, mask_id]
-    spt_aux, exg_aux = spt[:, :, :, x_aux_id], exg[:, :, :, x_aux_id]
-    spt_aux_mask, exg_aux_mask = spt[:, :, :, mask_aux_id], exg[:, :, :, mask_aux_id]
-    to_delete = [mask_id, x_aux_id, mask_aux_id]
-    spt, exg = np.delete(spt, to_delete, axis=-1), np.delete(exg, to_delete, axis=-1)
-    if time_ids is not None:
-        spt_time, exg_time = spt[:, :, :, time_ids], exg[:, :, :, time_ids]
-        spt_aux = np.concatenate([spt_aux[..., np.newaxis], spt_time], axis=-1)
-        exg_aux = np.concatenate([exg_aux[..., np.newaxis], exg_time], axis=-1)
-    return exg, exg_mask, exg_aux, exg_aux_mask, spt, spt_mask, spt_aux, spt_aux_mask
+    spt, exg = np.delete(spt, [mask_id], axis=-1), np.delete(exg, [mask_id], axis=-1)
+    return exg, exg_mask, spt, spt_mask
 
 
 class ModelWrapper:
@@ -128,14 +121,18 @@ class ModelWrapper:
             model_params: dict,
             model_type: str,
             loss: str = 'mse',
-            lr: float = 0.001,
+            lr: float = 0.0001,
+            pretr_lr: float = None,
+            finet_lr: float = None,
             run_eagerly = False,
             *args, **kwargs
     ):
         self.checkpoint_dir = checkpoint_dir
         self.model_params = model_params
         self.loss = loss
-        self.lr = lr
+        # self.lr = lr
+        self.pretr_lr = pretr_lr or lr
+        self.finet_lr = finet_lr or lr
         self.run_eagerly = run_eagerly
         # self.run_eagerly = False
 
@@ -180,34 +177,39 @@ class ModelWrapper:
             x: np.ndarray,
             spt: List[np.ndarray],
             exg: List[np.ndarray],
+            x_aux: np.ndarray,
+            spt_aux: List[np.ndarray],
+            exg_aux: List[np.ndarray],
+            tt: np.ndarray,
             epochs: int = 50,
             batch_size: int = 32,
             verbose: int = 0,
             val_x: np.ndarray = None, val_spt: List[np.ndarray] = None, val_exg: List[np.ndarray] = None,
+            val_x_aux: np.ndarray = None, val_spt_aux: List[np.ndarray] = None, val_exg_aux: List[np.ndarray] = None,
+            val_tt: np.ndarray = None,
             early_stop_patience: int = None,
             exg_static=None, spt_static=None, val_exg_static=None, val_spt_static=None,
             **kwargs
     ):
+        tf.keras.backend.clear_session(free_memory=True)
         null_id = self.null_id
-        time_ids = np.where(np.array(self.model_params['feature_mask']) == 2)[0]
-        exg_static = exg_static if exg_static is not None else np.zeros((x.shape[0], 1, 0))
-        spt_static = spt_static if spt_static is not None else np.zeros((x.shape[0], 1, 0))
-        val_exg_static = val_exg_static if val_exg_static is not None else np.zeros((val_x.shape[0], 1, 0))
-        val_spt_static = val_spt_static if val_spt_static is not None else np.zeros((val_x.shape[0], 1, 0))
+        exg_static = exg_static if exg_static is not None else np.zeros((x.shape[0], 0))
+        spt_static = spt_static if spt_static is not None else np.zeros((x.shape[0], 0))
+        val_exg_static = val_exg_static if val_exg_static is not None else np.zeros((val_x.shape[0], 0))
+        val_spt_static = val_spt_static if val_spt_static is not None else np.zeros((val_x.shape[0], 0))
 
-        exg, exg_mask, exg_aux, exg_aux_mask, spt, spt_mask, spt_aux, spt_aux_mask = data_reshuffle(
-            x, spt, exg, null_id, -2, -1, time_ids)
-        # X = ((exg, exg_mask, exg_aux, exg_aux_mask), (spt, spt_mask, spt_aux, spt_aux_mask))
-        X = ((exg, exg_mask, exg_static, exg_aux, exg_aux_mask), (spt, spt_mask, spt_static, spt_aux, spt_aux_mask))
+        exg, exg_mask, spt, spt_mask = data_reshuffle(x, spt, exg, null_id)
+        exg_aux, exg_aux_mask, spt_aux, spt_aux_mask = data_reshuffle(x_aux, spt_aux, exg_aux, null_id)
+        X = ((exg, exg_mask, tt, exg_static, exg_aux, exg_aux_mask), (spt, spt_mask, spt_static, spt_aux, spt_aux_mask))
 
-        val_exg, val_exg_mask, val_exg_aux, val_exg_aux_mask, val_spt, val_spt_mask, val_spt_aux, val_spt_aux_mask = (
-            data_reshuffle(val_x, val_spt, val_exg, null_id, -2, -1, time_ids))
-        val_data = ((
-                (val_exg, val_exg_mask, val_exg_static, val_exg_aux, val_exg_aux_mask),
-                (val_spt, val_spt_mask, val_spt_static, val_spt_aux, val_spt_aux_mask)
-        ), None)
+        val_exg, val_exg_mask, val_spt, val_spt_mask = data_reshuffle(
+            val_x, val_spt, val_exg, null_id)
+        val_exg_aux, val_exg_aux_mask, val_spt_aux, val_spt_aux_mask = data_reshuffle(
+            val_x_aux, val_spt_aux, val_exg_aux, null_id)
+        val_X = ((val_exg, val_exg_mask, val_tt, val_exg_static, val_exg_aux, val_exg_aux_mask),
+                (val_spt, val_spt_mask, val_spt_static, val_spt_aux, val_spt_aux_mask))
 
-        lr = self.lr
+        lr = self.pretr_lr
         lr = lr_schedule_warmup_linear(lr, warmup_steps=500)
 
         checkpoint_path = os.path.join(self.checkpoint_dir, 'cp.weights.h5')
@@ -228,6 +230,10 @@ class ModelWrapper:
             )
             callbacks.append(early_stopping)
 
+        # --- AdamW
+        self.wd = self.model_params['l2_reg']
+        self.model_params['l2_reg'] = None  # disable l2 regularization in layers, we'll use AdamW's weight decay instead
+        # ---
         encoder = self.enc_cls(**self.model_params)
         self.model = self.pretr_cls(encoder)
 
@@ -235,23 +241,30 @@ class ModelWrapper:
         self.model(X_dummy)
         self.model.summary(expand_nested=True)
         # return
-        
-        optimizer = tf.keras.optimizers.Adam(learning_rate=lr, global_clipnorm=1.0)
-        self.model.compile(
-            optimizer=optimizer,
-            run_eagerly=self.run_eagerly,
+
+        # optimizer = tf.keras.optimizers.Adam(learning_rate=lr, global_clipnorm=1.0)
+        # --- AdamW with weight decay, excluding certain parameters from decay
+        optimizer = tf.keras.optimizers.AdamW(learning_rate=lr, global_clipnorm=1.0, weight_decay=self.wd)
+        optimizer.exclude_from_weight_decay(
+            var_list=[
+                self.model.encoder.embedder.proj.kernel,
+                # self.model.intp_head.w,
+                # self.model.mean_head.w
+            ],
+            var_names=['beta', 'bias', 'gamma', 'offset', 'scale', 'channel_bias', 'variable_embeddings']
         )
+        # ---
+        self.model.compile(optimizer, run_eagerly=self.run_eagerly,)
 
         self.history = self.model.fit(
             x=X,
             epochs=epochs,
             batch_size=batch_size,
-            validation_data=val_data,
+            validation_data=(val_X, None),
             verbose=verbose,
             callbacks=callbacks
         )
         self.model.summary(expand_nested=True)
-        print("Variable embeddings scale:", self.model.encoder.ve_scale.numpy().item())
         self.epoch_times['pretr'] = timing_callback.epoch_times
 
         # Load best model
@@ -273,62 +286,73 @@ class ModelWrapper:
             x: np.ndarray,
             spt: List[np.ndarray],
             exg: List[np.ndarray],
+            tt: np.ndarray,
             y: np.ndarray,
             epochs: int = 50,
             batch_size: int = 32,
             verbose: int = 0,
             val_x: np.ndarray = None, val_spt: List[np.ndarray] = None, val_exg: List[np.ndarray] = None,
+            val_tt: np.ndarray = None,
             val_y: np.ndarray = None,
             early_stop_patience: int = None,
             exg_static=None, spt_static=None, val_exg_static=None, val_spt_static=None,
     ):
+        tf.keras.backend.clear_session(free_memory=True)
         null_id = self.null_id
-        exg_static = exg_static if exg_static is not None else np.zeros((x.shape[0], 1, 0))
-        spt_static = spt_static if spt_static is not None else np.zeros((x.shape[0], 1, 0))
-        val_exg_static = val_exg_static if val_exg_static is not None else np.zeros((val_x.shape[0], 1, 0))
-        val_spt_static = val_spt_static if val_spt_static is not None else np.zeros((val_x.shape[0], 1, 0))
+        exg_static = exg_static if exg_static is not None else np.zeros((x.shape[0], 0))
+        spt_static = spt_static if spt_static is not None else np.zeros((x.shape[0], 0))
+        val_exg_static = val_exg_static if val_exg_static is not None else np.zeros((val_x.shape[0], 0))
+        val_spt_static = val_spt_static if val_spt_static is not None else np.zeros((val_x.shape[0], 0))
 
-        exg, exg_mask, _, _, spt, spt_mask, _, _ = data_reshuffle(x, spt, exg, null_id, -2, -1)
-        X = ((exg, exg_mask, exg_static), (spt, spt_mask, spt_static))
+        exg, exg_mask, spt, spt_mask = data_reshuffle(x, spt, exg, null_id)
+        X = ((exg, exg_mask, tt, exg_static), (spt, spt_mask, spt_static))
 
-        val_exg, val_exg_mask, _, _, val_spt, val_spt_mask, _, _ = data_reshuffle(
-            val_x, val_spt, val_exg, null_id, -2, -1
-        )
-        val_X = ((val_exg, val_exg_mask, val_exg_static), (val_spt, val_spt_mask, val_spt_static))
+        val_exg, val_exg_mask, val_spt, val_spt_mask = data_reshuffle(
+            val_x, val_spt, val_exg, null_id)
+        val_X = ((val_exg, val_exg_mask, val_tt, val_exg_static), (val_spt, val_spt_mask, val_spt_static))
 
-        # print('\n## Warming-up the task-specific head ##\n')
-
-        lr = self.lr
-        lr = lr_schedule_warmup_linear(lr, warmup_steps=500)
-
-        # self.model_params['last_layer_no_mask'] = True  # no mask in the last layer
-        lr = 1e-4  # reduce learning rate for warmup and finetuning
-        lr = lr_schedule_warmup_linear(lr, warmup_steps=500)
-
+        # --- AdamW
+        if not hasattr(self, 'wd'):
+            self.wd = self.model_params['l2_reg']
+        self.model_params['l2_reg'] = None
+        # ---
         pooling = self.model_params.pop('pooling', 'attn')
         encoder = self.enc_cls(**self.model_params)
         self.model = self.finet_cls(encoder, pooling=pooling)
-        # optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
-        optimizer = {"optimizer": tf.keras.optimizers.Adam(learning_rate=lr, global_clipnorm=1.0)}
-        """optimizer = {
-            "encoder_optimizer": tf.keras.optimizers.Adam(learning_rate=lr),  # frozen encoder, unused
-            "head_optimizer": tf.keras.optimizers.Adam(learning_rate=lr)
-        }"""
 
         X_dummy = tuple(tuple(x1[:batch_size] for x1 in x) for x in X)
         self.model(X_dummy)
 
         pretrained_path = os.path.join(self.checkpoint_dir, 'pretr_encoder.weights.h5')
         self.load_pretrained_checkpoint(pretrained_path)
-        '''self.model.summary(expand_nested=True)  # COMMENT FROM HERE FOR NO WARMUP
+        '''print('\n## Warming-up the task-specific head ##\n')  # COMMENT FROM HERE FOR NO WARMUP
 
-        self.model.compile(loss=self.loss, **optimizer, metrics=['mae', 'mse'], run_eagerly=self.run_eagerly)
+        self.model.summary(expand_nested=True)
+
+        lr = self.finet_lr * 10  # higher learning rate for warming up the head
+        lr = lr_schedule_warmup_linear(lr, warmup_steps=500)
+        # lr = FixedPeakSchedule(lr, warmup_steps=500)
+
+        # optimizer = tf.keras.optimizers.Adam(learning_rate=lr, global_clipnorm=1.0)
+        # --- AdamW with weight decay, excluding certain parameters from decay
+        optimizer = tf.keras.optimizers.AdamW(learning_rate=lr, global_clipnorm=1.0, weight_decay=self.wd)
+        optimizer.exclude_from_weight_decay(
+            var_list=[
+                # self.model.encoder.embedder.proj.kernel,
+                self.model.pooling.scorer.kernel,
+                # self.model.head.kernel,
+            ],
+            var_names=['beta', 'bias', 'gamma', 'offset', 'scale', 'variable_embeddings']
+        )
+        # ---
+
+        self.model.compile(optimizer, self.loss, metrics=['mae', 'mse'], run_eagerly=self.run_eagerly)
 
         checkpoint_path = os.path.join(self.checkpoint_dir, 'cp.weights.h5')
         model_checkpoint = ModelCheckpointCallback(checkpoint_path)
         timing_callback = TimingCallback()
         callbacks = [model_checkpoint, timing_callback]
-        early_stopping = EarlyStoppingCallback(2, min_delta=0)
+        early_stopping = EarlyStoppingCallback(max(1, int(early_stop_patience * 0.1)), min_delta=0)
         callbacks.append(early_stopping)
 
         warmup_epochs = max(1, int(epochs * 0.1))
@@ -366,6 +390,10 @@ class ModelWrapper:
         if hasattr(self.model.encoder.embedder, 'time_embedders'):
             for emb in self.model.encoder.embedder.time_embedders:
                 emb.trainable = False  # fixed embeddings
+        if hasattr(self.model.encoder, 'static_feats_embedder') and hasattr(self.model.encoder.static_feats_embedder, 'time_embedders'):
+            for emb in self.model.encoder.static_feats_embedder.time_embedders:
+                emb.trainable = False  # fixed embeddings
+        # self.model.encoder.encoder_layers[-1].trainable = True
         if hasattr(self.model.encoder.embedder, 'pos_embedder') and hasattr(self.model.encoder.embedder.pos_embedder, 'time_embedders'):
             for emb in self.model.encoder.embedder.pos_embedder.time_embedders:
                 emb.trainable = False
@@ -376,12 +404,23 @@ class ModelWrapper:
         # self.model.encoder.embedder.variable_embeddings.trainable = False
         self.model.summary(expand_nested=True)
 
-        optimizer = {"optimizer": tf.keras.optimizers.Adam(learning_rate=lr, global_clipnorm=1.0)}
-        """optimizer = {
-            "encoder_optimizer": tf.keras.optimizers.Adam(learning_rate=1e-4),
-            "head_optimizer": tf.keras.optimizers.Adam(learning_rate=lr)
-        }"""
-        self.model.compile(loss=self.loss, **optimizer, metrics=['mae', 'mse'], run_eagerly=self.run_eagerly)
+        lr = self.finet_lr
+        lr = lr_schedule_warmup_linear(lr, warmup_steps=500)
+        # lr = FixedPeakSchedule(lr, warmup_steps=500)
+
+        # optimizer = tf.keras.optimizers.Adam(learning_rate=lr, global_clipnorm=1.0)
+        # --- AdamW with weight decay, excluding certain parameters from decay
+        optimizer = tf.keras.optimizers.AdamW(learning_rate=lr, global_clipnorm=1.0, weight_decay=self.wd)
+        optimizer.exclude_from_weight_decay(
+            var_list=[
+                self.model.encoder.embedder.proj.kernel,
+                # self.model.pooling.scorer.kernel,
+                # self.model.head.kernel,
+            ],
+            var_names=['beta', 'bias', 'gamma', 'offset', 'scale', 'attention_scorer', 'variable_embeddings']
+        )
+        # ---
+        self.model.compile(optimizer, self.loss, metrics=['mae', 'mse'], run_eagerly=self.run_eagerly)
 
         # reinitialize callbacks
         checkpoint_path = os.path.join(self.checkpoint_dir, 'cp.weights.h5')
@@ -412,7 +451,6 @@ class ModelWrapper:
             callbacks=callbacks
         )
         self.model.summary(expand_nested=True)
-        print("Variable embeddings scale:", self.model.encoder.ve_scale.numpy().item())
         self.epoch_times['finet2'] = timing_callback.epoch_times
 
         # Load best model
@@ -424,13 +462,14 @@ class ModelWrapper:
             self, x: np.ndarray,
             spt: List[np.ndarray],
             exg: List[np.ndarray],
+            tt: np.ndarray,
             exg_static=None, spt_static=None,
     ):
-        exg_static = exg_static if exg_static is not None else np.zeros((x.shape[0], 1, 0))
-        spt_static = spt_static if spt_static is not None else np.zeros((x.shape[0], 1, 0))
+        exg_static = exg_static if exg_static is not None else np.zeros((x.shape[0], 0))
+        spt_static = spt_static if spt_static is not None else np.zeros((x.shape[0], 0))
 
-        exg, exg_mask, _, _, spt, spt_mask, _, _ = data_reshuffle(x, spt, exg, self.null_id, -2, -1)
-        X = ((exg, exg_mask, exg_static), (spt, spt_mask, spt_static))
+        exg, exg_mask, spt, spt_mask = data_reshuffle(x, spt, exg, self.null_id)
+        X = ((exg, exg_mask, tt, exg_static), (spt, spt_mask, spt_static))
 
         y_preds = self.model.predict(X)
 
@@ -440,17 +479,20 @@ class ModelWrapper:
             self, x: np.ndarray,
             spt: List[np.ndarray],
             exg: List[np.ndarray],
+            tt: np.ndarray,
+            x_aux: np.ndarray,
+            spt_aux: List[np.ndarray],
+            exg_aux: List[np.ndarray],
             exg_static=None, spt_static=None,
     ):
-        exg_static = exg_static if exg_static is not None else np.zeros((x.shape[0], 1, 0))
-        spt_static = spt_static if spt_static is not None else np.zeros((x.shape[0], 1, 0))
+        exg_static = exg_static if exg_static is not None else np.zeros((x.shape[0], 0))
+        spt_static = spt_static if spt_static is not None else np.zeros((x.shape[0], 0))
 
         null_id = self.null_id
-        time_ids = np.where(np.array(self.model_params['feature_mask']) == 2)[0]
 
-        exg, exg_mask, exg_aux, exg_aux_mask, spt, spt_mask, spt_aux, spt_aux_mask = data_reshuffle(
-            x, spt, exg, null_id, -2, -1, time_ids)
-        X = ((exg, exg_mask, exg_static, exg_aux, exg_aux_mask), (spt, spt_mask, spt_static, spt_aux, spt_aux_mask))
+        exg, exg_mask, spt, spt_mask = data_reshuffle(x, spt, exg, null_id)
+        exg_aux, exg_aux_mask, spt_aux, spt_aux_mask = data_reshuffle(x_aux, spt_aux, exg_aux, null_id)
+        X = ((exg, exg_mask, tt, exg_static, exg_aux, exg_aux_mask), (spt, spt_mask, spt_static, spt_aux, spt_aux_mask))
 
         y_pred = self.model.predict(X)
 

@@ -35,6 +35,7 @@ def prepare_train_test(
         id_array: np.ndarray,
         spt_array: List[np.ndarray],
         exg_array: List[np.ndarray],
+        tt: np.ndarray,
         test_start: str,
         valid_start: str,
         spt_dict: dict[str, pd.Series]
@@ -52,6 +53,7 @@ def prepare_train_test(
         'id_train': id_array[is_train],
         'spt_train': [arr[is_train] for arr in spt_array],
         'exg_train': [arr[is_train] for arr in exg_array],
+        'tt_train': tt[is_train],
 
         'x_test': x_array[is_test],
         'y_test': y_array[is_test],
@@ -59,7 +61,7 @@ def prepare_train_test(
         'id_test': id_array[is_test],
         'spt_test': [arr[is_test] for arr in spt_array],
         'exg_test': [arr[is_test] for arr in exg_array],
-        'spt_dict': spt_dict,
+        'tt_test': tt[is_test],
 
         'x_valid': x_array[is_valid],
         'y_valid': y_array[is_valid],
@@ -67,6 +69,9 @@ def prepare_train_test(
         'id_valid': id_array[is_valid],
         'spt_valid': [arr[is_valid] for arr in spt_array],
         'exg_valid': [arr[is_valid] for arr in exg_array],
+        'tt_valid': tt[is_valid],
+
+        'spt_dict': spt_dict,
     }
 
     return res

@@ -287,7 +287,8 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, scaler_ty
         stn: {label_col: vars(spt_scalers[stn][label_col])} for stn in spt_scalers
     }
 
-    exg_cols = exg_cols + (exg_params['features_stn'] if 'features_stn' in exg_params else [])
+    features_stn = exg_params['features_stn'] if 'features_stn' in exg_params else []
+    exg_cols = exg_cols + features_stn
     cols = [label_col] + exg_cols
 
     time_feats = feat_params["time_feats"]
@@ -346,12 +347,16 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, scaler_ty
             ts_dict.pop(stn)
             continue
         for col in cols:
-            aux_is_null = _sample_aux_nulls(ts[f"{col}_is_null"], rate=0.1)
-            aux = ts[f"{col}_aux"].copy()
-            aux[aux_is_null == 1] = np.nan
-            aux = aux.ffill()
-            ts.loc[:, f"{col}_aux"] = aux
-            ts.loc[:, f"{col}_aux_is_null"] = aux_is_null
+            if col not in features_stn:
+                aux_is_null = _sample_aux_nulls(ts[f"{col}_is_null"], rate=0.1)
+                aux = ts[f"{col}_aux"].copy()
+                aux[aux_is_null == 1] = np.nan
+                aux = aux.ffill()
+                ts.loc[:, f"{col}_aux"] = aux
+                ts.loc[:, f"{col}_aux_is_null"] = aux_is_null
+            else:
+                ts.loc[:, f"{col}_aux"] = ts[col]
+                ts.loc[:, f"{col}_aux_is_null"] = ts[f"{col}_is_null"]
         ts_dict[stn] = ts
 
     # split ts_dict and ts_dict_aux
@@ -367,7 +372,7 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, scaler_ty
         ts_dict[stn] = ts
         ts_dict_aux[stn] = ts_aux
 
-    x_array, exg_array, spt_array, y_array, time_array, id_array = extract_windows(
+    x_array, exg_array, spt_array, y_array, time_array, id_array, tt = extract_windows(
         ts_dict=ts_dict,
         label_col=label_col,
         exg_cols=exg_cols,
@@ -385,6 +390,7 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, scaler_ty
         id_array=id_array,
         spt_array=spt_array,
         exg_array=exg_array,
+        tt=tt,
         test_start=eval_params['test_start'],
         valid_start=eval_params['valid_start'],
         spt_dict=spt_dict
@@ -415,7 +421,7 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, scaler_ty
         ts_dict_aux[stn][f"{label_col}_orig_is_null"] = ts_dict[stn][f"{label_col}_is_null"].copy()
         ts_dict_aux[stn][f"{label_col}_orig_null_dist"] = ts_dict[stn][f"{label_col}_null_dist"].copy()
 
-    _, exg_array, spt_array, y_array, time_array, id_array = extract_windows(
+    _, exg_array, spt_array, y_array, time_array, id_array, _ = extract_windows(
         ts_dict_aux,
         label_col=f"{label_col}_orig",
         exg_cols=[label_col] + exg_cols,
@@ -435,6 +441,7 @@ def data_step(path_params: dict, prep_params: dict, eval_params: dict, scaler_ty
         id_array=id_array,
         spt_array=spt_array,
         exg_array=exg_array,
+        tt=tt,
         test_start=eval_params['test_start'],
         valid_start=eval_params['valid_start'],
         spt_dict=spt_dict

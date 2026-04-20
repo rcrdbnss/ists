@@ -176,8 +176,8 @@ class TimeEmbedding(tf.keras.layers.Layer):
             weights_list.append(cyclical_encoding(c_in))
             curr_offset += c_in
 
-        # Offsets for broadcasting: (1, 1, 1, F)
-        self.time_offsets = tf.constant(offsets, dtype=tf.int32)[None, None, None, :]
+        # Offsets for broadcasting: (1, 1, F)
+        self.time_offsets = tf.constant(offsets, dtype=tf.int32)[None, None, :]
 
         # Unified embedding table
         unified_weights = np.concatenate(weights_list, axis=0)
@@ -185,23 +185,24 @@ class TimeEmbedding(tf.keras.layers.Layer):
             input_dim=curr_offset,
             output_dim=2,  # Each feature gets sin/cos (2 dims)
             embeddings_initializer=tf.constant_initializer(unified_weights),
-            trainable=False
+            trainable=False,
+            name="time_embedding_lookup"
         )
 
     def build(self, input_shape):
-        _, C, T, _ = input_shape
-        self.C, self.T = C, T
+        _, T, _ = input_shape
+        self.T = T
 
     def call(self, tt):
-        C, T, F = self.C, self.T, len(self.time_features)
+        T, F = self.T, len(self.time_features)
 
         # Broadcast offsets and lookup
-        # tt (B, C, T, F) + offsets (1, 1, 1, F)
+        # tt (B, T, F) + offsets (1, 1, F)
         tt_lookup = tf.cast(tt, tf.int32) + self.time_offsets
-        t_emb = self.time_lookup(tt_lookup)  # (B, C, T, F, 2)
+        t_emb = self.time_lookup(tt_lookup)  # (B, T, F, 2)
 
         # Flatten the last two dims: F features * 2 dims each
-        t_emb = tf.reshape(t_emb, (-1, C, T, F*2))  # (B, C, T, F*2)
+        t_emb = tf.reshape(t_emb, (-1, T, F*2))  # (B, T, F*2)
         return t_emb
 
 
@@ -337,20 +338,12 @@ class TemporalEmbedding(tf.keras.layers.Layer):
 
         self.l2_reg = tf.keras.regularizers.l2(l2_reg) if l2_reg else None
         if self.activation == 'swiglu':
-            self.embedding = tf.keras.layers.Conv1D(
-                filters=self.d_model * 2,
-                kernel_size=self.kernel_size,
-                padding='same',
-                activation=None,
-                kernel_regularizer=self.l2_reg
-            )
+            from ists_.model.utils import SwiGLUConv1D
+            self.embedding = SwiGLUConv1D(self.d_model, self.kernel_size, padding='same', l2_reg=l2_reg)
         else:
             self.embedding = tf.keras.layers.Conv1D(
-                filters=self.d_model,
-                kernel_size=self.kernel_size,
-                padding='same',
-                activation=self.activation,
-                kernel_regularizer=self.l2_reg
+                filters=self.d_model, kernel_size=self.kernel_size, padding='same',
+                activation=self.activation, kernel_regularizer=self.l2_reg,
             )
 
         if self.custom_embedding == 1:
@@ -374,7 +367,7 @@ class TemporalEmbedding(tf.keras.layers.Layer):
             if self.time_features:
                 # self.time_embedders = [CyclicalEmbedding(c_in=TIME_N_VALUES[f]) for f in time_features]
                 self.time_lookup = TimeEmbedding({f: TIME_N_VALUES[f] for f in time_features})
-                self.proj = tf.keras.layers.Dense(d_model, kernel_regularizer=self.l2_reg)
+                self.proj = tf.keras.layers.Dense(d_model, kernel_regularizer=self.l2_reg, name="time_embeddings_proj")
         elif self.custom_embedding == 5:
             if self.pos_enc:
                 self.pos_embedder = PositionalEmbedding(self.d_model, base=1000)
@@ -437,12 +430,9 @@ class TemporalEmbedding(tf.keras.layers.Layer):
 
         # Embedding values
         x = tf.reshape(x, (B*C, T, I))  # (B*C, T, I)
-        if self.activation == 'swiglu':
-            emb = self.embedding(x)  # (B*C, T, d_model*2)
-            v, g = tf.split(emb, 2, axis=-1)  # (B*C, T, d_model)
-            emb = v * tf.nn.silu(g)  # (B*C, T, d_model)
-        else:
-            emb = self.embedding(x)  # (B*C, T, d_model)
+
+        emb = self.embedding(x)  # (B*C, T, d_model)
+
         D = tf.shape(emb)[-1]
         emb = tf.reshape(emb, (B, C, T, D))  # (B, C, T, d_model)
 
@@ -490,27 +480,29 @@ class TemporalEmbedding(tf.keras.layers.Layer):
             if self.custom_embedding == 3:
                 emb *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
             else:  # custom_embedding == 6
-                emb *= tf.math.sqrt(tf.cast(1 + 1 + (1 if self.pos_enc else 0), tf.float32))  # fixme: time + variable + position
+                emb *= tf.math.sqrt(tf.cast(1 + 1 + (1 if self.pos_enc else 0), tf.float32))  # time + variable + position
 
             # time_emb = []
             # for i, time_embedder in enumerate(self.time_embedders):
             #     t = time_embedder(tf.gather(tt, i, axis=-1))
             #     time_emb.append(t)
             # time_emb = tf.concat(time_emb, axis=-1)  # (B, T, F*2)
-            time_emb = self.time_lookup(tt)  # (B, C, T, F*2)
-            time_emb = self.proj(time_emb)  # (B, C, T, d_model)
-            time_emb = time_emb / tf.norm(time_emb, axis=-1, keepdims=True) * tf.math.sqrt(tf.cast(self.d_model/2, tf.float32))
-            emb = emb + time_emb
+
+            time_emb = self.time_lookup(tt)  # (B, T, F*2)
+            time_emb = self.proj(time_emb)  # (B, T, d_model)
+            time_emb = time_emb / tf.norm(time_emb, axis=-1, keepdims=True) * self.ve_scale
+            time_emb = time_emb[:, tf.newaxis]  # (B, 1, T, d_model)
+            emb = emb + time_emb * ((1/4) ** 0.5)
 
             variable_embeddings = self.variable_embeddings  # (1, V, 1, d_model)
             # variable_embeddings = self.ve_proj(self.variable_embeddings)  # (1, V, 1, d_model)
             variable_embeddings /= tf.norm(variable_embeddings, axis=-1, keepdims=True)  # normalize to unit length
             variable_embeddings = variable_embeddings * self.ve_scale
-            emb = emb + variable_embeddings
+            emb = emb + variable_embeddings * ((1/4) ** 0.5)
 
             if self.pos_enc:
                 pos_emb = self.pos_embedder(x)  # (1, T, d_model)
-                emb = emb + pos_emb[tf.newaxis]
+                emb = emb + pos_emb[tf.newaxis] * ((1/4) ** 0.5)
 
             return emb
 

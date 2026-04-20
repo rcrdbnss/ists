@@ -131,6 +131,7 @@ def extract_windows(ts_dict, label_col, exg_cols, num_spt, time_feats, num_past,
     X_exg, X_spt = {col: [] for col in exg_cols}, {f"spt{col}": [] for col in range(num_spt)}
     time_array = []
     id_array = []
+    tt = []
 
     window = num_past + num_fut
     cols = [label_col] + exg_cols + [f"spt{s}" for s in range(num_spt)]
@@ -143,11 +144,10 @@ def extract_windows(ts_dict, label_col, exg_cols, num_spt, time_feats, num_past,
     label_col_is_null_mask = all_columns == f"{label_col}_is_null"
     time_feats_mask = np.isin(all_columns, time_feats)
     exg_cols_masks = [
-        np.isin(all_columns, [col, f"{col}_is_null"]) | time_feats_mask for col in exg_cols
+        np.isin(all_columns, [col, f"{col}_is_null"]) for col in exg_cols
     ]
     spt_cols_masks = [
-        np.isin(all_columns, [f"spt{col}", f"spt{col}_is_null"]) | time_feats_mask
-        for col in range(num_spt)
+        np.isin(all_columns, [f"spt{col}", f"spt{col}_is_null"]) for col in range(num_spt)
     ]
 
     for stn, ts in tqdm(ts_dict.items(), desc='Station'):
@@ -173,7 +173,7 @@ def extract_windows(ts_dict, label_col, exg_cols, num_spt, time_feats, num_past,
             y.append([y_window[label_col_mask].item()])
 
             # Append features for X
-            X.append(window_values[:num_past, label_col_mask | label_col_is_null_mask | time_feats_mask])
+            X.append(window_values[:num_past, label_col_mask | label_col_is_null_mask])
 
             # Append features for external columns (X_exg)
             for j, mask in enumerate(exg_cols_masks):
@@ -182,6 +182,8 @@ def extract_windows(ts_dict, label_col, exg_cols, num_spt, time_feats, num_past,
             # Append features for spatial columns (X_spt)
             for j, mask in enumerate(spt_cols_masks):
                 X_spt[f"spt{j}"].append(window_values[:num_past, mask])
+
+            tt.append(window_values[:num_past, time_feats_mask])
 
             # Append time indices and station IDs
             time_array.append(ts_index[[i, i+num_past-1, i+num_past+num_fut-1]])
@@ -194,5 +196,6 @@ def extract_windows(ts_dict, label_col, exg_cols, num_spt, time_feats, num_past,
     y = np.array(y, dtype=float)
     time_array = np.array(time_array)
     id_array = np.array(id_array)
+    tt = np.array(tt, dtype=float)
 
-    return X, X_exg, X_spt, y, time_array, id_array
+    return X, X_exg, X_spt, y, time_array, id_array, tt

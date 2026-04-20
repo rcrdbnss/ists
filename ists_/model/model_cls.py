@@ -418,23 +418,20 @@ class MVEncoderLayerLGA(ists_.model.model.EncoderLocalGlobalAttnMaskLayer):
         # self.cls_attn = CrossAttention(**self.attn_kwargs)
 
     def build(self, x_shape):
-        V, B, T, E = x_shape
+        B, V, T, E = x_shape
         self.glb_attn = GlobalWindowAttention(
             sequence_length=T, window_size=15, channels=V,
             **self.attn_kwargs
         )
         super().build(x_shape)
 
-    def call(self, x, attention_mask=None, do_local=True, do_global=True):  # x: (v, b, t, e) attn_mask: (v, b, t)
+    def call(self, x, attention_mask=None, do_local=True, do_global=True):  # x: (b, v, t, e) attn_mask: (b, v, t)
         shape = tf.shape(x)
-        v, b, t, e = shape[0], shape[1], shape[2], shape[3]
+        b, v, t, e = shape[0], shape[1], shape[2], shape[3]
 
         attn_mask = attention_mask
         if attn_mask is None:
-            attn_mask = tf.ones((v, b, t), dtype=tf.float32)
-
-        x = tf.transpose(x, perm=[1, 0, 2, 3])  # x: (b, v, t, e)
-        attn_mask = tf.transpose(attn_mask, perm=[1, 0, 2])  # attn_mask: (b, v, t)
+            attn_mask = tf.ones((b, v, t), dtype=tf.float32)
 
         if do_local:
             # attn_mask_loc = tf.reshape(attn_mask, (b*v, t, 1))  # attn_mask: (b*v, t, 1)  QMask
@@ -477,7 +474,6 @@ class MVEncoderLayerLGA(ists_.model.model.EncoderLocalGlobalAttnMaskLayer):
 
         x = self.ffn(x)
 
-        x = tf.transpose(x, perm=[1, 0, 2, 3])  # x: (v, b, t, e)
         return x
 
 
