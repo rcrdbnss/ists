@@ -248,8 +248,7 @@ class ModelWrapper:
         optimizer.exclude_from_weight_decay(
             var_list=[
                 self.model.encoder.embedder.proj.kernel,
-                # self.model.intp_head.w,
-                # self.model.mean_head.w
+                # self.model.intp_head.w, self.model.mean_head.w,
             ],
             var_names=['beta', 'bias', 'gamma', 'offset', 'scale', 'channel_bias', 'variable_embeddings']
         )
@@ -414,7 +413,6 @@ class ModelWrapper:
         optimizer.exclude_from_weight_decay(
             var_list=[
                 self.model.encoder.embedder.proj.kernel,
-                # self.model.pooling.scorer.kernel,
                 # self.model.head.kernel,
             ],
             var_names=['beta', 'bias', 'gamma', 'offset', 'scale', 'attention_scorer', 'variable_embeddings']

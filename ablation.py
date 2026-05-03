@@ -557,7 +557,7 @@ def ablation(
         # name += "_W15"  # window 15, + optimized version
         # name += "_"
         # name += "_minmax"
-        name += "_b1000"  # sinusoidal embedding with base=100
+        name += "_b1000"  # sinusoidal embedding with base=1000
         # name += "_PreLN"
         name += "_RMSnorm"
         name += "_SwiGLU+bias01"

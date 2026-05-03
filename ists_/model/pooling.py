@@ -48,10 +48,10 @@ class AttentivePooling(tf.keras.layers.Layer):
 
         # Define the scaling factor: 1 / sqrt(d_model)
         # self.scale = tf.math.rsqrt(tf.cast(d_model, tf.float32))
-        self.scale = 1 / np.sqrt(d_model)
+        # self.scale = 1 / np.sqrt(d_model)
 
         # The query vector (kernel)
-        self.scorer = self.add_weight(shape=(d_model, 1), name="attention_scorer")
+        self.scorer = self.add_weight(shape=(d_model, 1), name="attention_scorer", initializer="lecun_uniform")
         super(AttentivePooling, self).build(input_shape)
 
     def call(self, inputs, mask=None):
@@ -59,8 +59,8 @@ class AttentivePooling(tf.keras.layers.Layer):
         # Shape: (batch, seq_len, 1)
         scores = tf.matmul(inputs, self.scorer)
 
-        # 2. APPLY SCALING (Critical for wider models)
-        scores = scores * self.scale
+        # # 2. APPLY SCALING (Critical for wider models)
+        # scores = scores * self.scale
 
         # 3. Apply mask
         if mask is not None:

@@ -367,7 +367,9 @@ class TemporalEmbedding(tf.keras.layers.Layer):
             if self.time_features:
                 # self.time_embedders = [CyclicalEmbedding(c_in=TIME_N_VALUES[f]) for f in time_features]
                 self.time_lookup = TimeEmbedding({f: TIME_N_VALUES[f] for f in time_features})
-                self.proj = tf.keras.layers.Dense(d_model, kernel_regularizer=self.l2_reg, name="time_embeddings_proj")
+                self.proj = tf.keras.layers.Dense(
+                    d_model, kernel_regularizer=self.l2_reg, name="time_embeddings_proj"
+                )
         elif self.custom_embedding == 5:
             if self.pos_enc:
                 self.pos_embedder = PositionalEmbedding(self.d_model, base=1000)
