@@ -3,6 +3,7 @@ from typing import List
 
 import numpy as np
 import tensorflow as tf
+from tensorflow.keras import mixed_precision
 
 from ists_.model.model_cls import ISTForecastingCLS, ISTInterpolationCLS, ISTEncoderCLS
 from ists_.model.model_attnpool import ISTEncoder, ISTInterpolation, ISTForecasting
@@ -192,6 +193,7 @@ class ModelWrapper:
             **kwargs
     ):
         tf.keras.backend.clear_session(free_memory=True)
+        mixed_precision.set_global_policy('mixed_bfloat16')
         null_id = self.null_id
         exg_static = exg_static if exg_static is not None else np.zeros((x.shape[0], 0))
         spt_static = spt_static if spt_static is not None else np.zeros((x.shape[0], 0))
@@ -210,7 +212,8 @@ class ModelWrapper:
                 (val_spt, val_spt_mask, val_spt_static, val_spt_aux, val_spt_aux_mask))
 
         lr = self.pretr_lr
-        lr = lr_schedule_warmup_linear(lr, warmup_steps=500)
+        # lr = lr_schedule_warmup_linear(lr, warmup_steps=500)
+        lr = FixedPeakSchedule(lr, warmup_steps=4000)
 
         checkpoint_path = os.path.join(self.checkpoint_dir, 'cp.weights.h5')
         model_checkpoint = ModelCheckpointCallback(checkpoint_path)
@@ -297,6 +300,7 @@ class ModelWrapper:
             exg_static=None, spt_static=None, val_exg_static=None, val_spt_static=None,
     ):
         tf.keras.backend.clear_session(free_memory=True)
+        mixed_precision.set_global_policy('mixed_bfloat16')
         null_id = self.null_id
         exg_static = exg_static if exg_static is not None else np.zeros((x.shape[0], 0))
         spt_static = spt_static if spt_static is not None else np.zeros((x.shape[0], 0))
@@ -404,8 +408,8 @@ class ModelWrapper:
         self.model.summary(expand_nested=True)
 
         lr = self.finet_lr
-        lr = lr_schedule_warmup_linear(lr, warmup_steps=500)
-        # lr = FixedPeakSchedule(lr, warmup_steps=500)
+        # lr = lr_schedule_warmup_linear(lr, warmup_steps=500)
+        lr = FixedPeakSchedule(lr, warmup_steps=4000)
 
         # optimizer = tf.keras.optimizers.Adam(learning_rate=lr, global_clipnorm=1.0)
         # --- AdamW with weight decay, excluding certain parameters from decay

@@ -389,7 +389,7 @@ class TemporalEmbedding(tf.keras.layers.Layer):
                 self.time_embedders = [FixedEmbedding(d_model=d_model, c_in=TIME_N_VALUES[f], base=1000) for f in time_features]
                 # self.time_embedders = [TrainablePeriodicEmbedding(d_model=d_model, c_in=TIME_N_VALUES[f]) for f in time_features]
 
-        self.ve_scale = tf.math.sqrt(tf.cast(self.d_model/2, tf.float32))
+        self.ve_scale = np.sqrt(self.d_model/2)
 
     def build(self, x_shape, tt_shape):
         _, C, T, _ = x_shape
@@ -480,7 +480,7 @@ class TemporalEmbedding(tf.keras.layers.Layer):
         if self.custom_embedding in [3, 6]:
             # This factor sets the relative scale of the embedding and positional_encoding.
             if self.custom_embedding == 3:
-                emb *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
+                emb *= np.sqrt(self.d_model)
             else:  # custom_embedding == 6
                 emb *= tf.math.sqrt(tf.cast(1 + 1 + (1 if self.pos_enc else 0), tf.float32))  # time + variable + position
 
@@ -494,17 +494,17 @@ class TemporalEmbedding(tf.keras.layers.Layer):
             time_emb = self.proj(time_emb)  # (B, T, d_model)
             time_emb = time_emb / tf.norm(time_emb, axis=-1, keepdims=True) * self.ve_scale
             time_emb = time_emb[:, tf.newaxis]  # (B, 1, T, d_model)
-            emb = emb + time_emb * ((1/4) ** 0.5)
+            emb = emb + time_emb * ((1/6) ** 0.5)
 
             variable_embeddings = self.variable_embeddings  # (1, V, 1, d_model)
             # variable_embeddings = self.ve_proj(self.variable_embeddings)  # (1, V, 1, d_model)
             variable_embeddings /= tf.norm(variable_embeddings, axis=-1, keepdims=True)  # normalize to unit length
             variable_embeddings = variable_embeddings * self.ve_scale
-            emb = emb + variable_embeddings * ((1/4) ** 0.5)
+            emb = emb + variable_embeddings * ((1/6) ** 0.5)
 
             if self.pos_enc:
                 pos_emb = self.pos_embedder(x)  # (1, T, d_model)
-                emb = emb + pos_emb[tf.newaxis] * ((1/4) ** 0.5)
+                emb = emb + tf.cast(pos_emb[tf.newaxis], tf.bfloat16) * ((1/6) ** 0.5)
 
             return emb
 

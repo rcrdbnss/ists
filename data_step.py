@@ -32,20 +32,20 @@ def parse_params():
 
     parser.add_argument("--is-null-embedding", action='store_true', help="Use null embedding")
 
-    parser.add_argument("--d-model", type=int, default=None)
-    parser.add_argument("--num-heads", type=int, default=None)
-    parser.add_argument("--dff", type=int, default=None)
+    parser.add_argument("--d-model", type=int, default=48)
+    parser.add_argument("--num-heads", type=int, default=3)
+    parser.add_argument("--dff", type=int, default=128)
     parser.add_argument("--gru", type=int, default=None)
     parser.add_argument("--fff", type=int, nargs="+", default=None)
-    parser.add_argument("--num-layers", type=int, default=None)
+    parser.add_argument("--num-layers", type=int, default=4)
     parser.add_argument("-sw", "--shared-weights", action='store_true', help="Use shared weights")
     parser.add_argument("-pt", "--pretrain", action='store_true', help="Run pretraining task")
     parser.add_argument("--pooling", choices=['mean', 'last', 'attn', 'attn_pos_bias'], default='attn', help="Pooling type")
 
-    parser.add_argument("--lr", type=float, default=None, help="Learning rate")
+    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
     # parser.add_argument("--warmup-steps", type=int, default=None, help="Warmup steps for custom scheduler")
-    parser.add_argument("--l2-reg", type=float, default=None, help="L2 regularization")
-    parser.add_argument("--dropout", type=float, default=None, help="Dropout rate")
+    parser.add_argument("--l2-reg", type=float, default=1.0, help="L2 regularization")
+    parser.add_argument("--dropout", type=float, default=0.1, help="Dropout rate")
 
     parser.add_argument('--force-data-step', action='store_true', help='Force data step')
 

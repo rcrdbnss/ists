@@ -8,10 +8,10 @@ class MeanPooling(tf.keras.layers.Layer):
 
     def call(self, inputs, mask=None):
         if mask is not None:
-            mask_float = tf.cast(tf.expand_dims(mask, -1), tf.float32)
-            inputs *= mask_float
+            mask = tf.expand_dims(mask, -1)
+            inputs *= mask
             sum_inputs = tf.reduce_sum(inputs, axis=-2)
-            count = tf.reduce_sum(mask_float, axis=-2)
+            count = tf.reduce_sum(mask, axis=-2)
             avg = sum_inputs / (count + 1e-9)
         else:
             avg = tf.reduce_mean(inputs, axis=-2)

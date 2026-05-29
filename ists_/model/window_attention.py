@@ -70,7 +70,7 @@ class GlobalWindowAttention(GlobalSelfAttention):
         super().build(input_shape)
 
     def call(self, x, attention_mask=None):  # x: (B, C*S, E) attn_mask: (B, 1, C*S)
-        local_mask = self.local_mask
+        local_mask = tf.cast(self.local_mask, self.compute_dtype)
 
         # 2. Combine with any external mask (e.g., padding mask) if provided
         if attention_mask is not None:

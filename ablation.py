@@ -510,8 +510,8 @@ def ablation(
                 train_test_dict[f'exg_aux_{_set}'].append(x_aux)
 
         # finet_lr = train_test_dict['params']['model_params']['lr']
-        # finet_lr = 1e-4
-        finet_lr = 5e-5
+        finet_lr = 1e-4
+        # finet_lr = 5e-5
         train_test_dict['params']['model_params']['finet_lr'] = finet_lr
         m, e = to_scientific_notation(finet_lr)
         finet_lr = f'{int(m)}e{"+" if e > 0 else ""}{e}'
@@ -522,7 +522,7 @@ def ablation(
         name += "_SW" if train_test_dict['params']['model_params']['nn_params']['shared_weights'] else ""  # shared weights
         # name += "_IV"  # I: shared weights + embedder w/o regularizing small layer, II: shared weights, III: shared weights + no CLS in global attention
         # name += "_iqr"
-        name += "_sk500"  # scheduler options: sk4000, sk6e, skNoam1K
+        name += "_skNoam4K"  # scheduler options: sk4000, sk6e, skNoam1K
         # name += "_Mean"
         # name += "_Intp5"
         # name += "_Recn"
@@ -569,7 +569,7 @@ def ablation(
         name += "_Emb3"
         # name += "_TEdec"  # trend-error decomposition in the embedder
         # name += "+initHe"
-        name += "+SinScale1/4"
+        name += "+SinScale1/6"
         name += "_Keras3.9"  # updated rms implementation
         name += "_AdamW"
         name += "_MHAdroO" if train_test_dict['params']['model_params']['nn_params']['dropout_rate'] > 0 else ''  # Multi-Head Attention dropout on O (output) and/or A (attention scores)
