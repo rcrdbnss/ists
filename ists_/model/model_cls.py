@@ -1,9 +1,9 @@
 import numpy as np
 import tensorflow as tf
 
-import ists_.model.model
 from ists_.model.embedding import PositionalEmbedding, TemporalEmbedding
-from ists_.model.window_attention import GlobalWindowAttention
+from ists_.model.encoder import GlobalSelfAttention, FeedForward
+from ists_.model.window_attention import GlobalWindowAttention, GlobalWindowAttentionV2
 
 
 class PositionalEmbeddingCLS(PositionalEmbedding):
@@ -172,12 +172,6 @@ class ISTEncoderCLS(tf.keras.Model):
 
         for i in range(self.num_layers):
             X = self.encoder_layers[i](X, attention_mask=attn_mask)
-            """if self.last_layer_no_mask and i == self.num_layers - 1:
-                # X = self.encoder_layers[i](X, attention_mask=attn_mask, do_global=False)
-                # X = self.encoder_layers[i](X, do_global=False)
-                X = self.encoder_layers[i](X)
-            else:
-                X = self.encoder_layers[i](X, attention_mask=attn_mask)"""
 
         X = tf.transpose(X, perm=[1, 0, 2, 3])  # (v, b, t+1, e) -> (b, v, t+1, e)
 
@@ -399,31 +393,41 @@ class ISTForecastingCLS(tf.keras.Model):
         return self.compute_metrics(x, y, y_pred)'''
 
 
-class MVEncoderLayerLGA(ists_.model.model.EncoderLocalGlobalAttnMaskLayer):
+class MVEncoderLayerLGA(tf.keras.layers.Layer):
 
-    def __init__(self, *, lga_shared_weights=False, **kwargs):
-        super().__init__(**kwargs)
-        """if lga_shared_weights:
-            del self.glb_attn
-            self.glb_attn = self.loc_attn  # Use local attention for global attention as well"""
-        del self.glb_attn
-        self.attn_kwargs = {
-            'num_heads': kwargs['num_heads'],
-            'key_dim': kwargs['d_model'] // kwargs['num_heads'],
-            'dropout': kwargs['dropout_rate'],
-            'kernel_regularizer': tf.keras.regularizers.l2(kwargs['l2_reg']) if kwargs['l2_reg'] else None,
-            'pre_layernorm': kwargs.get('pre_layernorm', False),
-            'rms_scaling': kwargs.get('rms_scaling', False),
-        }
-        # self.cls_attn = CrossAttention(**self.attn_kwargs)
+    def __init__(self, *, d_model, num_heads, dff, activation='relu', dropout_rate=0.1, l2_reg=None,
+                 pre_layernorm=False, rms_scaling=False, **kwargs):
+        super().__init__()
 
-    def build(self, x_shape):
-        B, V, T, E = x_shape
-        self.glb_attn = GlobalWindowAttention(
-            sequence_length=T, window_size=15, channels=V,
-            **self.attn_kwargs
+        reg = {}
+        if l2_reg:
+            reg['kernel_regularizer'] = tf.keras.regularizers.l2(l2_reg)
+
+        self.loc_attn = GlobalSelfAttention(
+            num_heads=num_heads,
+            key_dim=d_model // num_heads,
+            dropout=dropout_rate,  # dropout on attention scores
+            **reg,
+            pre_layernorm=pre_layernorm, rms_scaling=rms_scaling
         )
-        super().build(x_shape)
+
+        self.glb_attn = GlobalWindowAttention(
+        # self.glb_attn = GlobalWindowAttentionV2(
+            window_size=15,
+            num_heads=num_heads,
+            key_dim=d_model // num_heads,
+            dropout=dropout_rate,  # dropout on attention scores
+            **reg,
+            pre_layernorm=pre_layernorm, rms_scaling=rms_scaling
+        )
+
+        self.ffn = FeedForward(
+            d_model=d_model,
+            dff=dff,
+            activation=activation,
+            dropout_rate=dropout_rate, **reg,  # dropout before residual connection
+            pre_layernorm=pre_layernorm, rms_scaling=rms_scaling
+        )
 
     def call(self, x, attention_mask=None, do_local=True, do_global=True):  # x: (b, v, t, e) attn_mask: (b, v, t)
         shape = tf.shape(x)
@@ -444,34 +448,7 @@ class MVEncoderLayerLGA(ists_.model.model.EncoderLocalGlobalAttnMaskLayer):
             x = tf.reshape(x, (b, v, t, e))  # x: (b, v, t, e)
 
         if do_global:
-            # attn_mask_glb = tf.reshape(attn_mask, (b, v*t, 1))  # attn_mask: (b, v*t, 1)  QMask
-            attn_mask_glb = tf.reshape(attn_mask, (b, 1, v*t))  # attn_mask: (b, 1, v*t)  KMask
-            """attn_mask_glb = tf.reshape(attn_mask, (b, v*t))  # attn_mask: (b, v*t)
-            attn_mask_glb = tf.expand_dims(attn_mask_glb, -1) * tf.expand_dims(attn_mask_glb, 1)  # attn_mask: (b, v*t, v*t)  symmetric mask"""
-
-            """# KMask+GAnoCLS CLS does not attend any token
-            is_not_first_token = tf.cast(tf.range(t) > 0, dtype=tf.float32)
-            is_not_first_token = is_not_first_token[tf.newaxis, tf.newaxis, :]  # (1, 1, t)
-            attn_mask_glb = attn_mask * is_not_first_token  # (b, v, t)
-            mul = tf.ones((b, v, t)) * is_not_first_token  # (b, v, t)
-            attn_mask_glb = tf.reshape(attn_mask_glb, (b, 1, v * t))  # attn_mask: (b, 1, v*t)
-            mul = tf.reshape(mul, (b, v * t, 1))  # mul: (b, v*t, 1)
-            attn_mask_glb = mul * attn_mask_glb  # attn_mask_glb: (b, v*t, v*t)"""
-
-            x = tf.reshape(x, (b, v*t, e))  # x: (b, v*t, e)
-            x = self.glb_attn(x, attention_mask=attn_mask_glb)
-            x = tf.reshape(x, (b, v, t, e))  # x: (b, v, t, e)
-
-            """# CLS token attention
-            cls_token = x[:, :, 0:1, :]  # (b, v, 1, e)
-            cls_token = tf.reshape(cls_token, (b*v, 1, e))  # (b*v, 1, e)
-            x = tf.reshape(x, (b*v, t, e))  # (b*v, t, e)
-            attn_mask_cls = tf.reshape(attn_mask, (b*v, 1, t))  # attn_mask: (b*v, 1, t)
-            cls_token = self.cls_attn(cls_token, context=x, attention_mask=attn_mask_cls)
-            cls_token = tf.reshape(cls_token, (b, v, 1, e))  # (b, v, 1, e)
-            x = tf.reshape(x, (b, v, t, e))  # (b, v, t, e)
-            x = tf.concat([cls_token, x[:, :, 1:]], axis=2)  # (b, v, t, e)"""
-
+            x = self.glb_attn(x, attention_mask=attn_mask)
         x = self.ffn(x)
 
         return x
